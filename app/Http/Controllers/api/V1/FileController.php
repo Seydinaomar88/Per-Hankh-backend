@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 
 use App\Http\Requests\StoreFileRequest;
 
+use App\Http\Resources\FileResource;
+
 use App\Models\Workspace;
-use App\Models\Task;
-use App\Models\Note;
 use App\Models\File;
 
 use Illuminate\Http\JsonResponse;
@@ -26,7 +26,12 @@ class FileController extends Controller
         Workspace $workspace
     ): JsonResponse {
 
-        $files = File::where(
+        $files = File::with([
+            'uploader',
+            'task',
+            'note'
+        ])
+        ->where(
             'workspace_id',
             $workspace->getKey()
         )
@@ -34,8 +39,11 @@ class FileController extends Controller
         ->get();
 
         return response()->json([
+
             'status' => true,
-            'files' => $files
+
+            'files' =>
+                FileResource::collection($files)
         ]);
     }
 
@@ -47,10 +55,58 @@ class FileController extends Controller
         Workspace $workspace
     ): JsonResponse {
 
+        /**
+         * SECURITY
+         * vérifier task appartient workspace
+         */
+        if ($request->task_id) {
+
+            $taskExists = $workspace
+                ->tasks()
+                ->where('id', $request->task_id)
+                ->exists();
+
+            if (!$taskExists) {
+
+                return response()->json([
+
+                    'status' => false,
+
+                    'message' =>
+                        'Task does not belong to workspace'
+
+                ], 422);
+            }
+        }
+
+        /**
+         * SECURITY
+         * vérifier note appartient workspace
+         */
+        if ($request->note_id) {
+
+            $noteExists = $workspace
+                ->notes()
+                ->where('id', $request->note_id)
+                ->exists();
+
+            if (!$noteExists) {
+
+                return response()->json([
+
+                    'status' => false,
+
+                    'message' =>
+                        'Note does not belong to workspace'
+
+                ], 422);
+            }
+        }
+
         $uploadedFile = $request->file('file');
 
         /**
-         * stockage physique
+         * STORAGE
          */
         $path = $uploadedFile->store(
             'uploads',
@@ -58,40 +114,58 @@ class FileController extends Controller
         );
 
         /**
-         * save DB
+         * SAVE DB
          */
         $file = File::create([
 
-            'workspace_id' => $workspace->getKey(),
+            'workspace_id' =>
+                $workspace->getKey(),
 
-            /**
-             * optionnel
-             */
-            'task_id' => $request->task_id,
+            'task_id' =>
+                $request->task_id,
 
-            /**
-             * optionnel
-             */
-            'note_id' => $request->note_id,
+            'note_id' =>
+                $request->note_id,
 
-            'uploaded_by' => Auth::id(),
+            'uploaded_by' =>
+                Auth::id(),
 
-            'original_name' => $uploadedFile->getClientOriginalName(),
+            'original_name' =>
+                $uploadedFile->getClientOriginalName(),
 
-            'file_name' => basename($path),
+            'file_name' =>
+                basename($path),
 
-            'mime_type' => $uploadedFile->getMimeType(),
+            'mime_type' =>
+                $uploadedFile->getMimeType(),
 
-            'size' => $uploadedFile->getSize(),
+            'size' =>
+                $uploadedFile->getSize(),
 
-            'path' => $path,
+            'path' =>
+                $path,
+        ]);
+
+        /**
+         * LOAD RELATIONS
+         */
+        $file->load([
+            'uploader',
+            'task',
+            'note'
         ]);
 
         return response()->json([
+
             'status' => true,
-            'message' => 'File uploaded successfully',
-            'file' => $file
-        ]);
+
+            'message' =>
+                'File uploaded successfully',
+
+            'file' =>
+                new FileResource($file)
+
+        ], 201);
     }
 
     /**
@@ -102,9 +176,36 @@ class FileController extends Controller
         File $file
     ): JsonResponse {
 
+        /**
+         * SECURITY
+         */
+        if (
+            $file->workspace_id !==
+            $workspace->id
+        ) {
+
+            return response()->json([
+
+                'status' => false,
+
+                'message' =>
+                    'Unauthorized file'
+
+            ], 403);
+        }
+
+        $file->load([
+            'uploader',
+            'task',
+            'note'
+        ]);
+
         return response()->json([
+
             'status' => true,
-            'file' => $file
+
+            'file' =>
+                new FileResource($file)
         ]);
     }
 
@@ -116,10 +217,23 @@ class FileController extends Controller
         File $file
     ): BinaryFileResponse {
 
+        /**
+         * SECURITY
+         */
+        if (
+            $file->workspace_id !==
+            $workspace->id
+        ) {
+
+            abort(403, 'Unauthorized file');
+        }
+
         return response()->download(
+
             storage_path(
                 'app/public/' . $file->path
             ),
+
             $file->original_name
         );
     }
@@ -133,7 +247,25 @@ class FileController extends Controller
     ): JsonResponse {
 
         /**
-         * delete physical file
+         * SECURITY
+         */
+        if (
+            $file->workspace_id !==
+            $workspace->id
+        ) {
+
+            return response()->json([
+
+                'status' => false,
+
+                'message' =>
+                    'Unauthorized file'
+
+            ], 403);
+        }
+
+        /**
+         * DELETE PHYSICAL FILE
          */
         if (
             Storage::disk('public')
@@ -145,13 +277,16 @@ class FileController extends Controller
         }
 
         /**
-         * delete DB
+         * DELETE DB
          */
         $file->delete();
 
         return response()->json([
+
             'status' => true,
-            'message' => 'File deleted successfully'
+
+            'message' =>
+                'File deleted successfully'
         ]);
     }
 }

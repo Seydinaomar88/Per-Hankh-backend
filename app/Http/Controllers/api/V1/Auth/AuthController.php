@@ -19,8 +19,9 @@ class AuthController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
+            'username' => 'nullable|string|max:255|unique:users,username',  // Ajouté
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|min:6',
+            'password' => 'required|min:6|confirmed',  // Ajouté 'confirmed'
         ]);
 
         $user = $this->authService->register($request->all());

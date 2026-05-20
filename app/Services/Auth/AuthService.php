@@ -10,17 +10,18 @@ class AuthService
     public function register(array $data)
     {
         return User::create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => Hash::make($data['password']),
+            "name" => $data["name"],
+            "username" => $data["username"] ?? null,
+            "email" => $data["email"],
+            "password" => Hash::make($data["password"]),
         ]);
     }
 
     public function login(array $data)
     {
-        $user = User::where('email', $data['email'])->first();
+        $user = User::where("email", $data["email"])->first();
 
-        if (!$user || !Hash::check($data['password'], $user->password)) {
+        if (!$user || !Hash::check($data["password"], $user->password)) {
             return null;
         }
 
