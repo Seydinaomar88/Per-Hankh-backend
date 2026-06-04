@@ -37,8 +37,6 @@ class WorkspaceController extends Controller
                 'name' => $workspace->name,
                 'description' => $workspace->description,
                 'owner_id' => $workspace->owner_id,
-
-                // ✅ safe check pivot (évite crash si null)
                 'role' => $workspace->pivot->role ?? null,
             ];
         });
@@ -66,10 +64,7 @@ class WorkspaceController extends Controller
             'description' => 'nullable|string'
         ]);
 
-        $workspace = $this->workspaceService->create(
-            $data,
-            $user
-        );
+        $workspace = $this->workspaceService->create($data, $user);
 
         return response()->json([
             'status' => true,
@@ -79,44 +74,226 @@ class WorkspaceController extends Controller
                 'name' => $workspace->name,
                 'description' => $workspace->description,
                 'owner_id' => $workspace->owner_id,
-
-                // ✅ important pour frontend PER ANKH
                 'role' => 'owner',
             ]
         ], 201);
     }
-    public function addMember(Request $request, Workspace $workspace)
-{
-    $request->validate([
-        'user_id' => 'required|exists:users,id',
-        'role' => 'required|in:member,viewer,admin'
-    ]);
 
-    $authUser = $request->user();
-
-    // 🔐 Vérifier si l'utilisateur a le droit
-    $isAllowed = $workspace->users()
-        ->where('user_id', $authUser->id)
-        ->wherePivotIn('role', [WorkspaceRole::OWNER, WorkspaceRole::ADMIN])
-        ->exists();
-
-    if (!$isAllowed) {
+    // 📌 Afficher un workspace spécifique
+    public function show(Workspace $workspace): JsonResponse
+    {
+        $user = request()->user();
+        
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+        
+        $hasAccess = $workspace->users()
+            ->where('user_id', $user->id)
+            ->exists();
+        
+        if (!$hasAccess) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Access denied'
+            ], 403);
+        }
+        
+        $role = $workspace->users()
+            ->where('user_id', $user->id)
+            ->first()
+            ?->pivot
+            ?->role;
+        
         return response()->json([
-            'status' => false,
-            'message' => 'Permission denied'
-        ], 403);
+            'status' => true,
+            'data' => [
+                'id' => $workspace->id,
+                'name' => $workspace->name,
+                'description' => $workspace->description,
+                'owner_id' => $workspace->owner_id,
+                'role' => $role,
+                'created_at' => $workspace->created_at,
+                'updated_at' => $workspace->updated_at,
+            ]
+        ]);
     }
 
-    // 👤 Ajouter membre
-    $workspace->users()->syncWithoutDetaching([
-        $request->user_id => [
-            'role' => $request->role
-        ]
-    ]);
+    // 📌 Récupérer les membres d'un workspace
+    public function members(Workspace $workspace): JsonResponse
+    {
+        $user = request()->user();
+        
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+        
+        $hasAccess = $workspace->users()
+            ->where('user_id', $user->id)
+            ->exists();
+        
+        if (!$hasAccess) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Access denied'
+            ], 403);
+        }
+        
+        $members = $workspace->users()
+            ->select('users.id', 'users.name', 'users.username', 'users.email', 'user_workspace.role')
+            ->get()
+            ->map(function($member) {
+                return [
+                    'id' => $member->id,
+                    'name' => $member->name,
+                    'username' => $member->username,
+                    'email' => $member->email,
+                    'role' => $member->pivot->role ?? 'member',
+                ];
+            });
+        
+        return response()->json([
+            'status' => true,
+            'data' => $members
+        ]);
+    }
 
-    return response()->json([
-        'status' => true,
-        'message' => 'Member added successfully'
-    ]);
-}
+    // 📌 Ajouter un membre
+    public function addMember(Request $request, Workspace $workspace): JsonResponse
+    {
+        $request->validate([
+            'email' => 'required|email|exists:users,email',
+            'role' => 'required|in:member,viewer,admin'
+        ]);
+
+        $authUser = $request->user();
+
+        $isAllowed = $workspace->users()
+            ->where('user_id', $authUser->id)
+            ->wherePivotIn('role', [WorkspaceRole::OWNER, WorkspaceRole::ADMIN])
+            ->exists();
+
+        if (!$isAllowed) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Permission denied'
+            ], 403);
+        }
+
+        $userToAdd = User::where('email', $request->email)->first();
+        
+        if (!$userToAdd) {
+            return response()->json([
+                'status' => false,
+                'message' => 'User not found'
+            ], 404);
+        }
+        
+        // Vérifier si déjà membre
+        $alreadyMember = $workspace->users()
+            ->where('user_id', $userToAdd->id)
+            ->exists();
+            
+        if ($alreadyMember) {
+            return response()->json([
+                'status' => false,
+                'message' => 'User is already a member'
+            ], 422);
+        }
+
+        $workspace->users()->attach($userToAdd->id, ['role' => $request->role]);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Member added successfully'
+        ]);
+    }
+
+    // 📌 Supprimer un membre
+    public function removeMember(Workspace $workspace, User $user): JsonResponse
+    {
+        $authUser = request()->user();
+        
+        if (!$authUser) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+        
+        $isAllowed = $workspace->users()
+            ->where('user_id', $authUser->id)
+            ->wherePivotIn('role', ['owner', 'admin'])
+            ->exists();
+        
+        if (!$isAllowed) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Permission denied'
+            ], 403);
+        }
+        
+        if ($workspace->owner_id === $user->id) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Cannot remove workspace owner'
+            ], 422);
+        }
+        
+        $workspace->users()->detach($user->id);
+        
+        return response()->json([
+            'status' => true,
+            'message' => 'Member removed successfully'
+        ]);
+    }
+
+    // 📌 Mettre à jour le rôle d'un membre
+    public function updateMemberRole(Request $request, Workspace $workspace, User $user): JsonResponse
+    {
+        $request->validate([
+            'role' => 'required|in:admin,member,viewer'
+        ]);
+        
+        $authUser = request()->user();
+        
+        if (!$authUser) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+        
+        $isAllowed = $workspace->users()
+            ->where('user_id', $authUser->id)
+            ->wherePivotIn('role', ['owner', 'admin'])
+            ->exists();
+        
+        if (!$isAllowed) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Permission denied'
+            ], 403);
+        }
+        
+        if ($workspace->owner_id === $user->id) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Cannot change owner role'
+            ], 422);
+        }
+        
+        $workspace->users()->updateExistingPivot($user->id, ['role' => $request->role]);
+        
+        return response()->json([
+            'status' => true,
+            'message' => 'Role updated successfully'
+        ]);
+    }
 }

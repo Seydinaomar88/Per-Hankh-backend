@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\NoteController;
 use App\Http\Controllers\Api\V1\CommentController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\FileController;
+use App\Http\Controllers\Api\V1\TaskFileController;
 
 Route::prefix('v1')->group(function () {
 
@@ -171,6 +172,47 @@ Route::prefix('v1')->group(function () {
 
             /**
              * =================================================
+             * TASK FILES
+             * =================================================
+             */
+
+            Route::get(
+                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files',
+                [TaskFileController::class, 'index']
+            );
+
+            Route::post(
+                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files',
+                [TaskFileController::class, 'store']
+            );
+
+            Route::get(
+                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files/{file}/download',
+                [TaskFileController::class, 'download']
+            );
+
+            Route::delete(
+                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files/{file}',
+                [TaskFileController::class, 'destroy']
+            );
+
+
+            Route::get(
+                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/comments',
+                [CommentController::class, 'indexTask']
+            );
+
+            Route::post(
+                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/comments',
+                [CommentController::class, 'storeTask']
+            );
+
+            Route::delete(
+                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/comments/{comment}',
+                [CommentController::class, 'destroyTask']
+            );
+            /**
+             * =================================================
              * NOTES
              * =================================================
              */
@@ -218,7 +260,7 @@ Route::prefix('v1')->group(function () {
 
             /**
              * =================================================
-             * FILES
+             * FILES (Workspace level)
              * =================================================
              */
 
@@ -256,9 +298,24 @@ Route::prefix('v1')->group(function () {
                  * =============================================
                  */
 
+                Route::get(
+                    '/workspaces/{workspace}/members',
+                    [WorkspaceController::class, 'members']
+                );
+
                 Route::post(
                     '/workspaces/{workspace}/members',
                     [WorkspaceController::class, 'addMember']
+                );
+
+                Route::delete(
+                    '/workspaces/{workspace}/members/{user}',
+                    [WorkspaceController::class, 'removeMember']
+                );
+
+                Route::patch(
+                    '/workspaces/{workspace}/members/{user}/role',
+                    [WorkspaceController::class, 'updateMemberRole']
                 );
 
                 /**
@@ -357,7 +414,7 @@ Route::prefix('v1')->group(function () {
 
                 /**
                  * =============================================
-                 * FILES
+                 * FILES (Workspace level)
                  * =============================================
                  */
 

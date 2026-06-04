@@ -9,6 +9,7 @@ class Comment extends Model
     protected $fillable = [
         'workspace_id',
         'note_id',
+        'task_id',      // Ajout
         'user_id',
         'content',
     ];
@@ -27,6 +28,14 @@ class Comment extends Model
     public function note()
     {
         return $this->belongsTo(Note::class);
+    }
+
+    /**
+     * TASK (NOUVEAU)
+     */
+    public function task()
+    {
+        return $this->belongsTo(Task::class);
     }
 
     /**

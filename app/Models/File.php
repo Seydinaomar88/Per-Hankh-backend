@@ -7,24 +7,17 @@ use Illuminate\Database\Eloquent\Model;
 class File extends Model
 {
     protected $fillable = [
-
         'workspace_id',
-
         'task_id',
-
         'note_id',
-
         'uploaded_by',
-
         'original_name',
-
         'file_name',
-
         'mime_type',
-
         'size',
-
         'path',
+        'cloudinary_url',
+        'cloudinary_public_id'
     ];
 
     public function workspace()
