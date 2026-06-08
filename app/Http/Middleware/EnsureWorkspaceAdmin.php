@@ -18,7 +18,6 @@ class EnsureWorkspaceAdmin
             return response()->json(['message' => 'Workspace not found'], 400);
         }
 
-        // IMPORTANT : récupérer le role depuis pivot correctement
         $membership = $workspace->users()
             ->where('user_id', $user->id)
             ->first();
@@ -29,8 +28,13 @@ class EnsureWorkspaceAdmin
 
         $role = $membership->pivot->role;
 
-        if (!in_array($role, ['owner', 'admin'])) {
-            return response()->json(['message' => 'Admin only'], 403);
+        // BLOQUER LES VIEWERS AVEC STATUS 403
+        if ($role === 'viewer') {
+            return response()->json([
+                'status' => false,
+                'message' => 'Vous n\'êtes pas autorisé à déplacer cette carte. Seuls les propriétaires, 
+                administrateurs et membres peuvent déplacer les tâches.'
+            ], 403);
         }
 
         return $next($request);

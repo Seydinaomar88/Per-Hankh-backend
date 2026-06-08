@@ -19,9 +19,9 @@ class AuthController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'username' => 'nullable|string|max:255|unique:users,username',  // Ajouté
+            'username' => 'nullable|string|max:255|unique:users,username',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|min:6|confirmed',  // Ajouté 'confirmed'
+            'password' => 'required|min:6|confirmed',
         ]);
 
         $user = $this->authService->register($request->all());
@@ -30,7 +30,7 @@ class AuthController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => 'User registered successfully',
+            'message' => 'utilisateur creer avec succes',
             'user' => $user,
             'token' => $token
         ], 201);
@@ -48,7 +48,7 @@ class AuthController extends Controller
         if (!$user) {
             return response()->json([
                 'status' => false,
-                'message' => 'Invalid credentials'
+                'message' => 'email ou mot de passe invalide'
             ], 401);
         }
 
@@ -56,7 +56,7 @@ class AuthController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => 'Login successful',
+            'message' => 'connexion avec succes',
             'user' => $user,
             'token' => $token
         ]);
@@ -68,7 +68,7 @@ class AuthController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => 'Logged out successfully'
+            'message' => 'deconnexion avec succes'
         ]);
     }
 

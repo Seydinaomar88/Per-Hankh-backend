@@ -5,6 +5,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\EnsureWorkspaceAccess;
 use App\Http\Middleware\EnsureWorkspaceAdmin;
+use App\Http\Middleware\CleanJsonResponse;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -14,14 +15,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-
+        $middleware->prepend(CleanJsonResponse::class);
         $middleware->alias([
             'workspace.access' => EnsureWorkspaceAccess::class,
             'workspace.admin' => EnsureWorkspaceAdmin::class,
         ]);
-
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
-    })
-    ->create();
+    })->create();

@@ -228,7 +228,7 @@ class TaskController extends Controller
                 'status' => false,
 
                 'message' =>
-                    'Unauthorized task'
+                    'Tache non authoriser'
 
             ], 403);
         }
@@ -251,7 +251,7 @@ class TaskController extends Controller
             'status' => true,
 
             'message' =>
-                'Task updated successfully',
+                'Tache modifier avec succes',
 
             'task' =>
                 new TaskResource($task)
@@ -281,7 +281,7 @@ class TaskController extends Controller
                 'status' => false,
 
                 'message' =>
-                    'Unauthorized task'
+                    'Tache non authoriser'
 
             ], 403);
         }
@@ -293,7 +293,7 @@ class TaskController extends Controller
             'status' => true,
 
             'message' =>
-                'Task deleted successfully'
+                'Tache supprime avec succes'
         ]);
     }
 
@@ -309,34 +309,62 @@ class TaskController extends Controller
     ): JsonResponse {
 
         /**
-         * SECURITY
+         * SECURITY - Vérifier que la tâche appartient au workspace
          */
-        if (
-            $task->workspace_id !==
-            $workspace->getKey()
-        ) {
-
+        if ($task->workspace_id !== $workspace->getKey()) {
             return response()->json([
-
                 'status' => false,
+                'message' => 'Tâche non trouvée'
+            ], 404);
+        }
 
-                'message' =>
-                    'Unauthorized task'
+        /**
+         * VÉRIFICATION DES PERMISSIONS POUR DÉPLACER UNE TÂCHE
+         * Seuls owner, admin et member peuvent déplacer des tâches
+         * Les viewers n'ont pas le droit
+         */
+        $user = Auth::user();
+        $member = $workspace->users()->where('user_id', $user->id)->first();
+        $role = $member ? $member->pivot->role : null;
 
+        $allowedRoles = ['owner', 'admin', 'member'];
+        
+        if (!in_array($role, $allowedRoles)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Vous n\'êtes pas autorisé à déplacer cette carte. Seuls les propriétaires, administrateurs et membres peuvent déplacer les tâches.'
             ], 403);
+        }
+
+        /**
+         * Vérifier que la colonne de destination existe dans le board
+         */
+        $destinationColumn = KanbanColumn::where('id', $request->kanban_column_id)
+            ->where('board_id', $board->id)
+            ->first();
+
+        if (!$destinationColumn) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Colonne de destination invalide'
+            ], 404);
         }
 
         /**
          * MOVE TASK
          */
+        $oldColumnId = $task->kanban_column_id;
+        
         $task->update([
-
-            'kanban_column_id' =>
-                $request->kanban_column_id,
-
-            'position' =>
-                $request->position,
+            'kanban_column_id' => $request->kanban_column_id,
+            'position' => $request->position,
         ]);
+
+        /**
+         * REORGANISER LES POSITIONS DES TÂCHES
+         */
+        $this->reorderPositions($oldColumnId);
+        $this->reorderPositions($request->kanban_column_id);
 
         /**
          * RELOAD RELATIONS
@@ -350,19 +378,26 @@ class TaskController extends Controller
         /**
          * BROADCAST EVENT
          */
-        broadcast(
-            new TaskMoved($task)
-        );
+        broadcast(new TaskMoved($task))->toOthers();
 
         return response()->json([
-
             'status' => true,
-
-            'message' =>
-                'Task moved successfully',
-
-            'task' =>
-                new TaskResource($task)
+            'message' => 'Tâche déplacée avec succès',
+            'task' => new TaskResource($task)
         ]);
+    }
+
+    /**
+     * Réorganiser les positions des tâches dans une colonne
+     */
+    private function reorderPositions(int $columnId): void
+    {
+        $tasks = Task::where('kanban_column_id', $columnId)
+            ->orderBy('position', 'asc')
+            ->get();
+        
+        foreach ($tasks as $index => $task) {
+            $task->update(['position' => $index]);
+        }
     }
 }

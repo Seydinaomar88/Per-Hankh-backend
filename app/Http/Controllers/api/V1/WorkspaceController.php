@@ -19,7 +19,7 @@ class WorkspaceController extends Controller
         $this->workspaceService = $workspaceService;
     }
 
-    // 📌 Liste des workspaces de l'utilisateur connecté
+    // Liste des workspaces de l'utilisateur connecté
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -27,7 +27,7 @@ class WorkspaceController extends Controller
         if (!$user) {
             return response()->json([
                 'status' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Non authentifié'
             ], 401);
         }
 
@@ -47,7 +47,7 @@ class WorkspaceController extends Controller
         ]);
     }
 
-    // 📌 Création workspace
+    // Création workspace
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -55,7 +55,7 @@ class WorkspaceController extends Controller
         if (!$user) {
             return response()->json([
                 'status' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Non authentifié'
             ], 401);
         }
 
@@ -68,7 +68,7 @@ class WorkspaceController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => 'Workspace created successfully',
+            'message' => 'Espace de travail créé avec succès',
             'workspace' => [
                 'id' => $workspace->id,
                 'name' => $workspace->name,
@@ -79,7 +79,7 @@ class WorkspaceController extends Controller
         ], 201);
     }
 
-    // 📌 Afficher un workspace spécifique
+    // Afficher un workspace spécifique
     public function show(Workspace $workspace): JsonResponse
     {
         $user = request()->user();
@@ -87,7 +87,7 @@ class WorkspaceController extends Controller
         if (!$user) {
             return response()->json([
                 'status' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Non authentifié'
             ], 401);
         }
         
@@ -98,7 +98,7 @@ class WorkspaceController extends Controller
         if (!$hasAccess) {
             return response()->json([
                 'status' => false,
-                'message' => 'Access denied'
+                'message' => 'Accès refusé'
             ], 403);
         }
         
@@ -122,7 +122,7 @@ class WorkspaceController extends Controller
         ]);
     }
 
-    // 📌 Récupérer les membres d'un workspace
+    // Récupérer les membres d'un workspace
     public function members(Workspace $workspace): JsonResponse
     {
         $user = request()->user();
@@ -130,7 +130,7 @@ class WorkspaceController extends Controller
         if (!$user) {
             return response()->json([
                 'status' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Non authentifié'
             ], 401);
         }
         
@@ -141,7 +141,7 @@ class WorkspaceController extends Controller
         if (!$hasAccess) {
             return response()->json([
                 'status' => false,
-                'message' => 'Access denied'
+                'message' => 'Accès refusé'
             ], 403);
         }
         
@@ -164,7 +164,7 @@ class WorkspaceController extends Controller
         ]);
     }
 
-    // 📌 Ajouter un membre
+    // Ajouter un membre
     public function addMember(Request $request, Workspace $workspace): JsonResponse
     {
         $request->validate([
@@ -182,7 +182,7 @@ class WorkspaceController extends Controller
         if (!$isAllowed) {
             return response()->json([
                 'status' => false,
-                'message' => 'Permission denied'
+                'message' => 'Permission refusée'
             ], 403);
         }
 
@@ -191,7 +191,7 @@ class WorkspaceController extends Controller
         if (!$userToAdd) {
             return response()->json([
                 'status' => false,
-                'message' => 'User not found'
+                'message' => 'Utilisateur non trouvé'
             ], 404);
         }
         
@@ -203,7 +203,7 @@ class WorkspaceController extends Controller
         if ($alreadyMember) {
             return response()->json([
                 'status' => false,
-                'message' => 'User is already a member'
+                'message' => 'Cet utilisateur est déjà membre'
             ], 422);
         }
 
@@ -211,11 +211,11 @@ class WorkspaceController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => 'Member added successfully'
+            'message' => 'Membre ajouté avec succès'
         ]);
     }
 
-    // 📌 Supprimer un membre
+    // Supprimer un membre
     public function removeMember(Workspace $workspace, User $user): JsonResponse
     {
         $authUser = request()->user();
@@ -223,7 +223,7 @@ class WorkspaceController extends Controller
         if (!$authUser) {
             return response()->json([
                 'status' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Non authentifié'
             ], 401);
         }
         
@@ -235,14 +235,14 @@ class WorkspaceController extends Controller
         if (!$isAllowed) {
             return response()->json([
                 'status' => false,
-                'message' => 'Permission denied'
+                'message' => 'Permission refusée'
             ], 403);
         }
         
         if ($workspace->owner_id === $user->id) {
             return response()->json([
                 'status' => false,
-                'message' => 'Cannot remove workspace owner'
+                'message' => 'Impossible de retirer le propriétaire de l\'espace de travail'
             ], 422);
         }
         
@@ -250,11 +250,11 @@ class WorkspaceController extends Controller
         
         return response()->json([
             'status' => true,
-            'message' => 'Member removed successfully'
+            'message' => 'Membre retiré avec succès'
         ]);
     }
 
-    // 📌 Mettre à jour le rôle d'un membre
+    // Mettre à jour le rôle d'un membre
     public function updateMemberRole(Request $request, Workspace $workspace, User $user): JsonResponse
     {
         $request->validate([
@@ -266,7 +266,7 @@ class WorkspaceController extends Controller
         if (!$authUser) {
             return response()->json([
                 'status' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Non authentifié'
             ], 401);
         }
         
@@ -278,14 +278,14 @@ class WorkspaceController extends Controller
         if (!$isAllowed) {
             return response()->json([
                 'status' => false,
-                'message' => 'Permission denied'
+                'message' => 'Permission refusée'
             ], 403);
         }
         
         if ($workspace->owner_id === $user->id) {
             return response()->json([
                 'status' => false,
-                'message' => 'Cannot change owner role'
+                'message' => 'Impossible de modifier le rôle du propriétaire'
             ], 422);
         }
         
@@ -293,7 +293,7 @@ class WorkspaceController extends Controller
         
         return response()->json([
             'status' => true,
-            'message' => 'Role updated successfully'
+            'message' => 'Rôle modifié avec succès'
         ]);
     }
 }

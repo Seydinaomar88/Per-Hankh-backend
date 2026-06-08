@@ -362,7 +362,7 @@ Route::prefix('v1')->group(function () {
 
                 /**
                  * =============================================
-                 * TASKS
+                 * TASKS (CREATE, UPDATE, DELETE, MOVE)
                  * =============================================
                  */
 
@@ -384,7 +384,6 @@ Route::prefix('v1')->group(function () {
                 /**
                  * MOVE TASK
                  */
-
                 Route::patch(
                     '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/move',
                     [TaskController::class, 'move']
