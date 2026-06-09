@@ -15,11 +15,11 @@ use App\Models\Board;
 use App\Models\KanbanColumn;
 use App\Models\Task;
 
-use App\Events\TaskMoved;
-
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Pusher\Pusher as PusherClient;
 
 class TaskController extends Controller
 {
@@ -320,8 +320,6 @@ class TaskController extends Controller
 
         /**
          * VÉRIFICATION DES PERMISSIONS POUR DÉPLACER UNE TÂCHE
-         * Seuls owner, admin et member peuvent déplacer des tâches
-         * Les viewers n'ont pas le droit
          */
         $user = Auth::user();
         $member = $workspace->users()->where('user_id', $user->id)->first();
@@ -376,9 +374,29 @@ class TaskController extends Controller
         ]);
 
         /**
-         * BROADCAST EVENT
+         * ENVOYER L'ÉVÉNEMENT PUSHER POUR LA SYNCHRONISATION EN TEMPS RÉEL
          */
-        broadcast(new TaskMoved($task))->toOthers();
+        try {
+            $pusher = new PusherClient(
+                env('PUSHER_APP_KEY'),
+                env('PUSHER_APP_SECRET'),
+                env('PUSHER_APP_ID'),
+                ['cluster' => 'eu', 'useTLS' => true]
+            );
+            
+            $pusher->trigger('public-channel', 'task.moved', [
+                'task_id' => $task->id,
+                'title' => $task->title,
+                'source_column_id' => $oldColumnId,
+                'destination_column_id' => $request->kanban_column_id,
+                'workspace_id' => $workspace->id,
+                'timestamp' => now()->toIso8601String()
+            ]);
+            
+            Log::info('Pusher event sent: task.moved', ['task_id' => $task->id]);
+        } catch (\Exception $e) {
+            Log::error('Pusher error: ' . $e->getMessage());
+        }
 
         return response()->json([
             'status' => true,

@@ -13,414 +13,115 @@ use App\Http\Controllers\Api\V1\CommentController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\TaskFileController;
+use App\Http\Controllers\Api\V1\PresenceController;
+
+Route::prefix("v1")->group(function () {
+
+    // PUBLIC AUTH
+    Route::post("/register", [AuthController::class, "register"]);
+    Route::post("/login", [AuthController::class, "login"]);
+
+    // PROTECTED ROUTES
+    Route::middleware("auth:sanctum")->group(function () {
+
+        // AUTH USER
+        Route::post("/logout", [AuthController::class, "logout"]);
+        Route::get("/me", [AuthController::class, "me"]);
+
+        // WORKSPACES
+        Route::get("/workspaces", [WorkspaceController::class, "index"]);
+        Route::post("/workspaces", [WorkspaceController::class, "store"]);
+
+        // NOTIFICATIONS
+        Route::get("/notifications", [NotificationController::class, "index"]);
+        Route::get("/notifications/unread", [NotificationController::class, "unread"]);
+        Route::get("/notifications/unread-count", [NotificationController::class, "unreadCount"]);
+        Route::patch("/notifications/{notification}/read", [NotificationController::class, "markAsRead"]);
+        Route::patch("/notifications/read-all", [NotificationController::class, "markAllAsRead"]);
+        Route::delete("/notifications/{notification}", [NotificationController::class, "destroy"]);
+
+        // PRESENCE (temps réel)
+        Route::post("/presence/online", [PresenceController::class, "online"]);
+        Route::post("/presence/offline", [PresenceController::class, "offline"]);
+
+        // WORKSPACE ACCESS
+        Route::middleware("workspace.access")->group(function () {
+
+            // SINGLE WORKSPACE
+            Route::get("/workspaces/{workspace}", [WorkspaceController::class, "show"]);
+
+            // BOARDS
+            Route::get("/workspaces/{workspace}/boards", [BoardController::class, "index"]);
+            Route::get("/workspaces/{workspace}/boards/{board}", [BoardController::class, "show"]);
+
+            // COLUMNS
+            Route::get("/workspaces/{workspace}/boards/{board}/columns", [KanbanColumnController::class, "index"]);
+
+            // TASKS (READ)
+            Route::get("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks", [TaskController::class, "index"]);
+            Route::get("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}", [TaskController::class, "show"]);
+
+            // TASK FILES
+            Route::get("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files", [TaskFileController::class, "index"]);
+            Route::post("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files", [TaskFileController::class, "store"]);
+            Route::get("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files/{file}/download", [TaskFileController::class, "download"]);
+            Route::delete("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files/{file}", [TaskFileController::class, "destroy"]);
+
+            // TASK COMMENTS
+            Route::get("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/comments", [CommentController::class, "indexTask"]);
+            Route::post("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/comments", [CommentController::class, "storeTask"]);
+            Route::delete("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/comments/{comment}", [CommentController::class, "destroyTask"]);
+
+            // NOTES
+            Route::get("/workspaces/{workspace}/notes", [NoteController::class, "index"]);
+            Route::post("/workspaces/{workspace}/notes", [NoteController::class, "store"]);
+            Route::get("/workspaces/{workspace}/notes/{note}", [NoteController::class, "show"]);
+            Route::put("/workspaces/{workspace}/notes/{note}", [NoteController::class, "update"]);
+
+            // COMMENTS
+            Route::get("/workspaces/{workspace}/notes/{note}/comments", [CommentController::class, "index"]);
+            Route::post("/workspaces/{workspace}/notes/{note}/comments", [CommentController::class, "store"]);
+            Route::get("/workspaces/{workspace}/notes/{note}/comments/{comment}", [CommentController::class, "show"]);
+
+            // FILES (Workspace level)
+            Route::get("/workspaces/{workspace}/files", [FileController::class, "index"]);
+            Route::post("/workspaces/{workspace}/files", [FileController::class, "store"]);
+            Route::get("/workspaces/{workspace}/files/{file}", [FileController::class, "show"]);
+            Route::get("/workspaces/{workspace}/files/{file}/download", [FileController::class, "download"]);
+
+            // ADMIN ONLY
+            Route::middleware("workspace.admin")->group(function () {
+
+                // MEMBERS
+                Route::get("/workspaces/{workspace}/members", [WorkspaceController::class, "members"]);
+                Route::post("/workspaces/{workspace}/members", [WorkspaceController::class, "addMember"]);
+                Route::delete("/workspaces/{workspace}/members/{user}", [WorkspaceController::class, "removeMember"]);
+                Route::patch("/workspaces/{workspace}/members/{user}/role", [WorkspaceController::class, "updateMemberRole"]);
+
+                // BOARDS
+                Route::post("/workspaces/{workspace}/boards", [BoardController::class, "store"]);
+                Route::put("/workspaces/{workspace}/boards/{board}", [BoardController::class, "update"]);
+                Route::delete("/workspaces/{workspace}/boards/{board}", [BoardController::class, "destroy"]);
+
+                // COLUMNS
+                Route::post("/workspaces/{workspace}/boards/{board}/columns", [KanbanColumnController::class, "store"]);
+                Route::put("/workspaces/{workspace}/boards/{board}/columns/{column}", [KanbanColumnController::class, "update"]);
+                Route::delete("/workspaces/{workspace}/boards/{board}/columns/{column}", [KanbanColumnController::class, "destroy"]);
+
+                // TASKS (CREATE, UPDATE, DELETE, MOVE)
+                Route::post("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks", [TaskController::class, "store"]);
+                Route::put("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}", [TaskController::class, "update"]);
+                Route::delete("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}", [TaskController::class, "destroy"]);
+                Route::patch("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/move", [TaskController::class, "move"]);
+
+                // NOTES
+                Route::delete("/workspaces/{workspace}/notes/{note}", [NoteController::class, "destroy"]);
 
-Route::prefix('v1')->group(function () {
-
-    /**
-     * =========================================================
-     * PUBLIC AUTH
-     * =========================================================
-     */
-
-    Route::post(
-        '/register',
-        [AuthController::class, 'register']
-    );
-
-    Route::post(
-        '/login',
-        [AuthController::class, 'login']
-    );
-
-    /**
-     * =========================================================
-     * PROTECTED ROUTES
-     * =========================================================
-     */
-
-    Route::middleware('auth:sanctum')->group(function () {
-
-        /**
-         * =====================================================
-         * AUTH USER
-         * =====================================================
-         */
-
-        Route::post(
-            '/logout',
-            [AuthController::class, 'logout']
-        );
-
-        Route::get(
-            '/me',
-            [AuthController::class, 'me']
-        );
-
-        /**
-         * =====================================================
-         * WORKSPACES
-         * =====================================================
-         */
-
-        Route::get(
-            '/workspaces',
-            [WorkspaceController::class, 'index']
-        );
-
-        Route::post(
-            '/workspaces',
-            [WorkspaceController::class, 'store']
-        );
-
-        /**
-         * =====================================================
-         * NOTIFICATIONS
-         * =====================================================
-         */
-
-        Route::get(
-            '/notifications',
-            [NotificationController::class, 'index']
-        );
-
-        Route::get(
-            '/notifications/unread',
-            [NotificationController::class, 'unread']
-        );
-
-        Route::get(
-            '/notifications/unread-count',
-            [NotificationController::class, 'unreadCount']
-        );
-
-        Route::patch(
-            '/notifications/{notification}/read',
-            [NotificationController::class, 'markAsRead']
-        );
-
-        Route::patch(
-            '/notifications/read-all',
-            [NotificationController::class, 'markAllAsRead']
-        );
-
-        Route::delete(
-            '/notifications/{notification}',
-            [NotificationController::class, 'destroy']
-        );
-
-        /**
-         * =====================================================
-         * WORKSPACE ACCESS
-         * =====================================================
-         */
-
-        Route::middleware('workspace.access')->group(function () {
-
-            /**
-             * =================================================
-             * SINGLE WORKSPACE
-             * =================================================
-             */
-
-            Route::get(
-                '/workspaces/{workspace}',
-                [WorkspaceController::class, 'show']
-            );
-
-            /**
-             * =================================================
-             * BOARDS
-             * =================================================
-             */
-
-            Route::get(
-                '/workspaces/{workspace}/boards',
-                [BoardController::class, 'index']
-            );
-
-            Route::get(
-                '/workspaces/{workspace}/boards/{board}',
-                [BoardController::class, 'show']
-            );
-
-            /**
-             * =================================================
-             * COLUMNS
-             * =================================================
-             */
-
-            Route::get(
-                '/workspaces/{workspace}/boards/{board}/columns',
-                [KanbanColumnController::class, 'index']
-            );
-
-            /**
-             * =================================================
-             * TASKS
-             * =================================================
-             */
-
-            Route::get(
-                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks',
-                [TaskController::class, 'index']
-            );
-
-            Route::get(
-                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}',
-                [TaskController::class, 'show']
-            );
-
-            /**
-             * =================================================
-             * TASK FILES
-             * =================================================
-             */
-
-            Route::get(
-                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files',
-                [TaskFileController::class, 'index']
-            );
-
-            Route::post(
-                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files',
-                [TaskFileController::class, 'store']
-            );
-
-            Route::get(
-                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files/{file}/download',
-                [TaskFileController::class, 'download']
-            );
-
-            Route::delete(
-                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/files/{file}',
-                [TaskFileController::class, 'destroy']
-            );
-
-
-            Route::get(
-                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/comments',
-                [CommentController::class, 'indexTask']
-            );
-
-            Route::post(
-                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/comments',
-                [CommentController::class, 'storeTask']
-            );
-
-            Route::delete(
-                '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/comments/{comment}',
-                [CommentController::class, 'destroyTask']
-            );
-            /**
-             * =================================================
-             * NOTES
-             * =================================================
-             */
-
-            Route::get(
-                '/workspaces/{workspace}/notes',
-                [NoteController::class, 'index']
-            );
-
-            Route::post(
-                '/workspaces/{workspace}/notes',
-                [NoteController::class, 'store']
-            );
-
-            Route::get(
-                '/workspaces/{workspace}/notes/{note}',
-                [NoteController::class, 'show']
-            );
-
-            Route::put(
-                '/workspaces/{workspace}/notes/{note}',
-                [NoteController::class, 'update']
-            );
-
-            /**
-             * =================================================
-             * COMMENTS
-             * =================================================
-             */
-
-            Route::get(
-                '/workspaces/{workspace}/notes/{note}/comments',
-                [CommentController::class, 'index']
-            );
-
-            Route::post(
-                '/workspaces/{workspace}/notes/{note}/comments',
-                [CommentController::class, 'store']
-            );
-
-            Route::get(
-                '/workspaces/{workspace}/notes/{note}/comments/{comment}',
-                [CommentController::class, 'show']
-            );
-
-            /**
-             * =================================================
-             * FILES (Workspace level)
-             * =================================================
-             */
-
-            Route::get(
-                '/workspaces/{workspace}/files',
-                [FileController::class, 'index']
-            );
-
-            Route::post(
-                '/workspaces/{workspace}/files',
-                [FileController::class, 'store']
-            );
-
-            Route::get(
-                '/workspaces/{workspace}/files/{file}',
-                [FileController::class, 'show']
-            );
-
-            Route::get(
-                '/workspaces/{workspace}/files/{file}/download',
-                [FileController::class, 'download']
-            );
-
-            /**
-             * =================================================
-             * ADMIN ONLY
-             * =================================================
-             */
-
-            Route::middleware('workspace.admin')->group(function () {
-
-                /**
-                 * =============================================
-                 * MEMBERS
-                 * =============================================
-                 */
-
-                Route::get(
-                    '/workspaces/{workspace}/members',
-                    [WorkspaceController::class, 'members']
-                );
-
-                Route::post(
-                    '/workspaces/{workspace}/members',
-                    [WorkspaceController::class, 'addMember']
-                );
-
-                Route::delete(
-                    '/workspaces/{workspace}/members/{user}',
-                    [WorkspaceController::class, 'removeMember']
-                );
-
-                Route::patch(
-                    '/workspaces/{workspace}/members/{user}/role',
-                    [WorkspaceController::class, 'updateMemberRole']
-                );
-
-                /**
-                 * =============================================
-                 * BOARDS
-                 * =============================================
-                 */
-
-                Route::post(
-                    '/workspaces/{workspace}/boards',
-                    [BoardController::class, 'store']
-                );
-
-                Route::put(
-                    '/workspaces/{workspace}/boards/{board}',
-                    [BoardController::class, 'update']
-                );
-
-                Route::delete(
-                    '/workspaces/{workspace}/boards/{board}',
-                    [BoardController::class, 'destroy']
-                );
-
-                /**
-                 * =============================================
-                 * COLUMNS
-                 * =============================================
-                 */
-
-                Route::post(
-                    '/workspaces/{workspace}/boards/{board}/columns',
-                    [KanbanColumnController::class, 'store']
-                );
-
-                Route::put(
-                    '/workspaces/{workspace}/boards/{board}/columns/{column}',
-                    [KanbanColumnController::class, 'update']
-                );
-
-                Route::delete(
-                    '/workspaces/{workspace}/boards/{board}/columns/{column}',
-                    [KanbanColumnController::class, 'destroy']
-                );
-
-                /**
-                 * =============================================
-                 * TASKS (CREATE, UPDATE, DELETE, MOVE)
-                 * =============================================
-                 */
-
-                Route::post(
-                    '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks',
-                    [TaskController::class, 'store']
-                );
-
-                Route::put(
-                    '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}',
-                    [TaskController::class, 'update']
-                );
-
-                Route::delete(
-                    '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}',
-                    [TaskController::class, 'destroy']
-                );
-
-                /**
-                 * MOVE TASK
-                 */
-                Route::patch(
-                    '/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/move',
-                    [TaskController::class, 'move']
-                );
-
-                /**
-                 * =============================================
-                 * NOTES
-                 * =============================================
-                 */
-
-                Route::delete(
-                    '/workspaces/{workspace}/notes/{note}',
-                    [NoteController::class, 'destroy']
-                );
-
-                /**
-                 * =============================================
-                 * COMMENTS
-                 * =============================================
-                 */
-
-                Route::delete(
-                    '/workspaces/{workspace}/notes/{note}/comments/{comment}',
-                    [CommentController::class, 'destroy']
-                );
-
-                /**
-                 * =============================================
-                 * FILES (Workspace level)
-                 * =============================================
-                 */
-
-                Route::delete(
-                    '/workspaces/{workspace}/files/{file}',
-                    [FileController::class, 'destroy']
-                );
+                // COMMENTS
+                Route::delete("/workspaces/{workspace}/notes/{note}/comments/{comment}", [CommentController::class, "destroy"]);
+
+                // FILES
+                Route::delete("/workspaces/{workspace}/files/{file}", [FileController::class, "destroy"]);
             });
         });
     });

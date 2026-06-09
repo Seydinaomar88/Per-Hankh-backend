@@ -1,30 +1,32 @@
 <?php
 
 return [
-    "default" => "reverb",
+    'default' => 'reverb',
     
-    "servers" => [
-        "reverb" => [
-            "host" => env("REVERB_SERVER_HOST", "0.0.0.0"),
-            "port" => env("REVERB_SERVER_PORT", 8080),
-            "hostname" => env("REVERB_HOST"),
-            "options" => [],
-            "max_request_size" => env("REVERB_MAX_REQUEST_SIZE", 10000),
-            "scaling" => [
-                "enabled" => env("REVERB_SCALING_ENABLED", false),
+    'servers' => [
+        'reverb' => [
+            'host' => '0.0.0.0',
+            'port' => 8084,
+            'hostname' => 'localhost',
+            'options' => [],
+            'max_request_size' => 10000,
+            'scaling' => [
+                'enabled' => false,
             ],
+            'pulse_ingest_interval' => 15,
+            'telescope_ingest_interval' => 15,
         ],
     ],
     
-    "apps" => [
+    'apps' => [
         [
-            "id" => env("REVERB_APP_ID", 1),
-            "name" => env("APP_NAME", "Laravel"),
-            "key" => env("REVERB_APP_KEY", "per-ankh-key"),
-            "secret" => env("REVERB_APP_SECRET", "per-ankh-secret"),
-            "capacity" => null,
-            "enable_client_messages" => true,
-            "enable_statistics" => true,
+            'id' => 176496,
+            'name' => 'per-ankh',
+            'key' => 'cwzlhdz6usudnzyhdkz4',
+            'secret' => '6ub6tkbc51spdxbcgjva',
+            'capacity' => null,
+            'enable_client_messages' => true,
+            'enable_statistics' => true,
         ],
     ],
 ];
