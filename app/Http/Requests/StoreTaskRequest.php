@@ -36,6 +36,12 @@ class StoreTaskRequest extends FormRequest
                 'in:low,medium,high'
             ],
 
+            // 🔥 AJOUTER LA RÈGLE DE VALIDATION POUR STATUS
+            'status' => [
+                'nullable',
+                'in:not_started,in_progress,review,done'
+            ],
+
             'assigned_to' => [
                 'nullable',
                 'exists:users,id'

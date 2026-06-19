@@ -16,7 +16,7 @@ class WorkspaceService
             'owner_id' => $user->id,
         ]);
 
-        // 👑 Créateur = OWNER
+        // Créateur = OWNER
         $workspace->users()->attach($user->id, [
             'role' => WorkspaceRole::OWNER
         ]);

@@ -6,9 +6,14 @@ return [
     'servers' => [
         'reverb' => [
             'host' => '0.0.0.0',
-            'port' => 8084,
+            'port' => 8085,
             'hostname' => 'localhost',
-            'options' => [],
+            'options' => [
+                'ssl' => [
+                    'local_cert' => null,
+                    'local_pk' => null,
+                ],
+            ],
             'max_request_size' => 10000,
             'scaling' => [
                 'enabled' => false,
@@ -20,13 +25,14 @@ return [
     
     'apps' => [
         [
-            'id' => 176496,
+            'id' => '176496',
             'name' => 'per-ankh',
             'key' => 'cwzlhdz6usudnzyhdkz4',
             'secret' => '6ub6tkbc51spdxbcgjva',
             'capacity' => null,
             'enable_client_messages' => true,
             'enable_statistics' => true,
+            'allowed_origins' => ['*'],
         ],
     ],
 ];

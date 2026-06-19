@@ -31,6 +31,11 @@ class UpdateTaskRequest extends FormRequest
                 'in:low,medium,high'
             ],
 
+            'status' => [
+                'nullable',
+                'in:not_started,in_progress,review,done'
+            ],
+
             'due_date' => [
                 'nullable',
                 'date'

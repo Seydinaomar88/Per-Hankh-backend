@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\TaskFileController;
 use App\Http\Controllers\Api\V1\PresenceController;
+use App\Http\Controllers\Api\V1\BroadcastController; 
 
 Route::prefix("v1")->group(function () {
 
@@ -21,8 +22,13 @@ Route::prefix("v1")->group(function () {
     Route::post("/register", [AuthController::class, "register"]);
     Route::post("/login", [AuthController::class, "login"]);
 
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+
     // PROTECTED ROUTES
     Route::middleware("auth:sanctum")->group(function () {
+
+       Route::post('/broadcasting/auth', [BroadcastController::class, 'auth']);
 
         // AUTH USER
         Route::post("/logout", [AuthController::class, "logout"]);
@@ -83,6 +89,14 @@ Route::prefix("v1")->group(function () {
             Route::post("/workspaces/{workspace}/notes/{note}/comments", [CommentController::class, "store"]);
             Route::get("/workspaces/{workspace}/notes/{note}/comments/{comment}", [CommentController::class, "show"]);
 
+            Route::get("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/notes", [NoteController::class, "indexTask"]);
+            Route::post("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/notes", [NoteController::class, "storeTask"]);
+            Route::put("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/notes/{note}", [NoteController::class, "updateTask"]);
+            Route::delete("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/notes/{note}", [NoteController::class, "destroyTask"]);
+
+            Route::get("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/notes/{note}/comments", [NoteController::class, "indexTaskNoteComments"]);
+            Route::post("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/notes/{note}/comments", [NoteController::class, "storeTaskNoteComment"]);
+            Route::delete("/workspaces/{workspace}/boards/{board}/columns/{column}/tasks/{task}/notes/{note}/comments/{comment}", [NoteController::class, "destroyTaskNoteComment"]);
             // FILES (Workspace level)
             Route::get("/workspaces/{workspace}/files", [FileController::class, "index"]);
             Route::post("/workspaces/{workspace}/files", [FileController::class, "store"]);

@@ -14,12 +14,19 @@ use App\Models\Workspace;
 use App\Models\Board;
 use App\Models\KanbanColumn;
 use App\Models\Task;
+use App\Models\User;
+use App\Models\Notification;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\DB;
 use Pusher\Pusher as PusherClient;
+use App\Mail\TaskAssignedEmail;
+use App\Mail\TaskCompletedEmail;
+use App\Mail\TaskOverdueEmail;
 
 class TaskController extends Controller
 {
@@ -44,13 +51,9 @@ class TaskController extends Controller
             $column->getKey()
         )
 
-        /**
-         * SEARCH
-         */
         ->when(
             $request->search,
             function ($query, $search) {
-
                 $query->where(
                     'title',
                     'LIKE',
@@ -59,13 +62,9 @@ class TaskController extends Controller
             }
         )
 
-        /**
-         * FILTER ASSIGNED USER
-         */
         ->when(
             $request->assigned_to,
             function ($query, $assignedTo) {
-
                 $query->where(
                     'assigned_to',
                     $assignedTo
@@ -73,13 +72,9 @@ class TaskController extends Controller
             }
         )
 
-        /**
-         * FILTER PRIORITY
-         */
         ->when(
             $request->priority,
             function ($query, $priority) {
-
                 $query->where(
                     'priority',
                     $priority
@@ -87,29 +82,28 @@ class TaskController extends Controller
             }
         )
 
-        ->orderBy('position')
+        ->when(
+            $request->status,
+            function ($query, $status) {
+                $query->where(
+                    'status',
+                    $status
+                );
+            }
+        )
+
+        ->orderBy('position', 'asc')
 
         ->paginate(10);
 
         return response()->json([
-
             'status' => true,
-
             'tasks' => TaskResource::collection($tasks),
-
             'pagination' => [
-
-                'current_page' =>
-                    $tasks->currentPage(),
-
-                'last_page' =>
-                    $tasks->lastPage(),
-
-                'per_page' =>
-                    $tasks->perPage(),
-
-                'total' =>
-                    $tasks->total(),
+                'current_page' => $tasks->currentPage(),
+                'last_page' => $tasks->lastPage(),
+                'per_page' => $tasks->perPage(),
+                'total' => $tasks->total(),
             ]
         ]);
     }
@@ -124,58 +118,55 @@ class TaskController extends Controller
         KanbanColumn $column
     ): JsonResponse {
 
+        $maxPosition = Task::where('kanban_column_id', $column->getKey())->max('position') ?? -1;
+
         $task = Task::create([
-
-            'kanban_column_id' =>
-                $column->getKey(),
-
-            'workspace_id' =>
-                $workspace->getKey(),
-
-            'created_by' =>
-                Auth::id(),
-
-            'assigned_to' =>
-                $request->assigned_to,
-
-            'title' =>
-                $request->title,
-
-            'description' =>
-                $request->description,
-
-            'due_date' =>
-                $request->due_date,
-
-            'priority' =>
-                $request->priority ?? 'medium',
-
-            'position' =>
-                $request->position ?? 0,
-
-            'tags' =>
-                $request->tags,
+            'kanban_column_id' => $column->getKey(),
+            'workspace_id' => $workspace->getKey(),
+            'created_by' => Auth::id(),
+            'assigned_to' => $request->assigned_to,
+            'title' => $request->title,
+            'description' => $request->description,
+            'due_date' => $request->due_date,
+            'priority' => $request->priority ?? 'medium',
+            'status' => $request->status ?? 'not_started',
+            'position' => $maxPosition + 1,
+            'tags' => $request->tags,
         ]);
 
-        /**
-         * LOAD RELATIONS
-         */
-        $task->load([
-            'creator',
-            'assignedUser',
-            'files'
-        ]);
+        if ($task->assigned_to) {
+            $assignedUser = User::find($task->assigned_to);
+            if ($assignedUser && $assignedUser->id !== Auth::id()) {
+                try {
+                    Mail::to($assignedUser->email)->send(new TaskAssignedEmail(
+                        $assignedUser,
+                        $task,
+                        Auth::user()->name
+                    ));
+                    Log::info('Email d\'assignation envoyé à: ' . $assignedUser->email);
+                    
+                    // 🔥 Créer une notification pour l'assignation
+                    $this->createNotification(
+                        $task->assigned_to,
+                        "📋 Nouvelle tâche assignée : {$task->title} par " . Auth::user()->name,
+                        'task_assigned',
+                        $task
+                    );
+                    
+                    // 🔥 Diffuser via WebSocket pour l'assignation
+                    $this->broadcastTaskEvent('task.assigned', $task);
+                } catch (\Exception $e) {
+                    Log::error('Erreur envoi email d\'assignation: ' . $e->getMessage());
+                }
+            }
+        }
+
+        $task->load(['creator', 'assignedUser', 'files']);
 
         return response()->json([
-
             'status' => true,
-
-            'message' =>
-                'Task created successfully',
-
-            'task' =>
-                new TaskResource($task)
-
+            'message' => 'Task created successfully',
+            'task' => new TaskResource($task)
         ], 201);
     }
 
@@ -189,23 +180,16 @@ class TaskController extends Controller
         Task $task
     ): JsonResponse {
 
-        $task->load([
-            'creator',
-            'assignedUser',
-            'files'
-        ]);
+        $task->load(['creator', 'assignedUser', 'files']);
 
         return response()->json([
-
             'status' => true,
-
-            'task' =>
-                new TaskResource($task)
+            'task' => new TaskResource($task)
         ]);
     }
 
     /**
-     * UPDATE TASK
+     * UPDATE TASK - AVEC GESTION DES NOTIFICATIONS EN TEMPS RÉEL
      */
     public function update(
         UpdateTaskRequest $request,
@@ -215,46 +199,35 @@ class TaskController extends Controller
         Task $task
     ): JsonResponse {
 
-        /**
-         * SECURITY
-         */
-        if (
-            $task->workspace_id !==
-            $workspace->getKey()
-        ) {
-
+        if ($task->workspace_id !== $workspace->getKey()) {
             return response()->json([
-
                 'status' => false,
-
-                'message' =>
-                    'Tache non authoriser'
-
+                'message' => 'Tache non authoriser'
             ], 403);
         }
 
-        $task->update(
-            $request->validated()
-        );
+        // 🔥 Sauvegarder l'ancien statut et l'ancien assigné
+        $oldStatus = $task->status;
+        $oldAssignedTo = $task->assigned_to;
 
-        /**
-         * RELOAD RELATIONS
-         */
-        $task->load([
-            'creator',
-            'assignedUser',
-            'files'
-        ]);
+        $task->update($request->validated());
+
+        // 🔥 VÉRIFIER SI LA TÂCHE EST TERMINÉE (notification en temps réel)
+        if ($task->status === 'done' && $oldStatus !== 'done') {
+            $this->handleTaskCompleted($task);
+        }
+
+        // 🔥 VÉRIFIER SI L'ASSIGNATION A CHANGÉ
+        if ($task->assigned_to && $task->assigned_to !== $oldAssignedTo) {
+            $this->handleTaskAssigned($task);
+        }
+
+        $task->load(['creator', 'assignedUser', 'files']);
 
         return response()->json([
-
             'status' => true,
-
-            'message' =>
-                'Tache modifier avec succes',
-
-            'task' =>
-                new TaskResource($task)
+            'message' => 'Tache modifier avec succes',
+            'task' => new TaskResource($task)
         ]);
     }
 
@@ -268,37 +241,23 @@ class TaskController extends Controller
         Task $task
     ): JsonResponse {
 
-        /**
-         * SECURITY
-         */
-        if (
-            $task->workspace_id !==
-            $workspace->getKey()
-        ) {
-
+        if ($task->workspace_id !== $workspace->getKey()) {
             return response()->json([
-
                 'status' => false,
-
-                'message' =>
-                    'Tache non authoriser'
-
+                'message' => 'Tache non authoriser'
             ], 403);
         }
 
         $task->delete();
 
         return response()->json([
-
             'status' => true,
-
-            'message' =>
-                'Tache supprime avec succes'
+            'message' => 'Tache supprime avec succes'
         ]);
     }
 
     /**
-     * MOVE TASK
+     * MOVE TASK - OPTIMISÉ ET RAPIDE AVEC BROADCAST EN TEMPS RÉEL
      */
     public function move(
         MoveTaskRequest $request,
@@ -308,9 +267,6 @@ class TaskController extends Controller
         Task $task
     ): JsonResponse {
 
-        /**
-         * SECURITY - Vérifier que la tâche appartient au workspace
-         */
         if ($task->workspace_id !== $workspace->getKey()) {
             return response()->json([
                 'status' => false,
@@ -318,9 +274,6 @@ class TaskController extends Controller
             ], 404);
         }
 
-        /**
-         * VÉRIFICATION DES PERMISSIONS POUR DÉPLACER UNE TÂCHE
-         */
         $user = Auth::user();
         $member = $workspace->users()->where('user_id', $user->id)->first();
         $role = $member ? $member->pivot->role : null;
@@ -330,13 +283,10 @@ class TaskController extends Controller
         if (!in_array($role, $allowedRoles)) {
             return response()->json([
                 'status' => false,
-                'message' => 'Vous n\'êtes pas autorisé à déplacer cette carte. Seuls les propriétaires, administrateurs et membres peuvent déplacer les tâches.'
+                'message' => 'Vous n\'êtes pas autorisé à déplacer cette carte.'
             ], 403);
         }
 
-        /**
-         * Vérifier que la colonne de destination existe dans le board
-         */
         $destinationColumn = KanbanColumn::where('id', $request->kanban_column_id)
             ->where('board_id', $board->id)
             ->first();
@@ -348,10 +298,16 @@ class TaskController extends Controller
             ], 404);
         }
 
-        /**
-         * MOVE TASK
-         */
         $oldColumnId = $task->kanban_column_id;
+        
+        Log::info('🔄 MOVE TASK', [
+            'task_id' => $task->id,
+            'old_column' => $oldColumnId,
+            'new_column' => $request->kanban_column_id,
+            'position' => $request->position,
+            'user_id' => $user->id,
+            'user_name' => $user->name
+        ]);
         
         $task->update([
             'kanban_column_id' => $request->kanban_column_id,
@@ -361,42 +317,15 @@ class TaskController extends Controller
         /**
          * REORGANISER LES POSITIONS DES TÂCHES
          */
-        $this->reorderPositions($oldColumnId);
-        $this->reorderPositions($request->kanban_column_id);
-
-        /**
-         * RELOAD RELATIONS
-         */
-        $task->load([
-            'creator',
-            'assignedUser',
-            'files'
-        ]);
-
-        /**
-         * ENVOYER L'ÉVÉNEMENT PUSHER POUR LA SYNCHRONISATION EN TEMPS RÉEL
-         */
-        try {
-            $pusher = new PusherClient(
-                env('PUSHER_APP_KEY'),
-                env('PUSHER_APP_SECRET'),
-                env('PUSHER_APP_ID'),
-                ['cluster' => 'eu', 'useTLS' => true]
-            );
-            
-            $pusher->trigger('public-channel', 'task.moved', [
-                'task_id' => $task->id,
-                'title' => $task->title,
-                'source_column_id' => $oldColumnId,
-                'destination_column_id' => $request->kanban_column_id,
-                'workspace_id' => $workspace->id,
-                'timestamp' => now()->toIso8601String()
-            ]);
-            
-            Log::info('Pusher event sent: task.moved', ['task_id' => $task->id]);
-        } catch (\Exception $e) {
-            Log::error('Pusher error: ' . $e->getMessage());
+        $this->forceReorderColumn($request->kanban_column_id);
+        if ($oldColumnId !== $request->kanban_column_id) {
+            $this->forceReorderColumn($oldColumnId);
         }
+
+        $task->load(['creator', 'assignedUser', 'files']);
+
+        // 🔥 ENVOYER L'ÉVÉNEMENT PUSHER AVEC LES INFOS UTILISATEUR
+        $this->sendPusherEventWithUser($task, $oldColumnId, $request->kanban_column_id, $board->id, $workspace->id, $user);
 
         return response()->json([
             'status' => true,
@@ -406,16 +335,303 @@ class TaskController extends Controller
     }
 
     /**
-     * Réorganiser les positions des tâches dans une colonne
+     * 🔥 ENVOYER L'ÉVÉNEMENT PUSHER AVEC LES INFOS UTILISATEUR
      */
-    private function reorderPositions(int $columnId): void
+    private function sendPusherEventWithUser(Task $task, int $oldColumnId, int $newColumnId, int $boardId, int $workspaceId, User $user): void
     {
-        $tasks = Task::where('kanban_column_id', $columnId)
-            ->orderBy('position', 'asc')
-            ->get();
-        
-        foreach ($tasks as $index => $task) {
-            $task->update(['position' => $index]);
+        try {
+            $pusher = new PusherClient(
+                env('PUSHER_APP_KEY'),
+                env('PUSHER_APP_SECRET'),
+                env('PUSHER_APP_ID'),
+                [
+                    'cluster' => env('PUSHER_CLUSTER', 'eu'),
+                    'useTLS' => true,
+                    'encrypted' => true,
+                ]
+            );
+            
+            // 🔥 Données complètes pour le frontend
+            $data = [
+                'id' => $task->id,
+                'title' => $task->title,
+                'source_column_id' => $oldColumnId,
+                'destination_column_id' => $newColumnId,
+                'position' => $task->position,
+                'board_id' => $boardId,
+                'workspace_id' => $workspaceId,
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'timestamp' => now()->toIso8601String()
+            ];
+            
+            // 🔥 Diffuser sur le canal 'tasks' avec l'événement 'task.moved'
+            $pusher->trigger('tasks', 'task.moved', $data);
+            
+            Log::info('📡 Pusher event sent: task.moved', [
+                'task_id' => $task->id,
+                'user_id' => $user->id,
+                'user_name' => $user->name
+            ]);
+        } catch (\Exception $e) {
+            Log::error('❌ Pusher error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 🔥 GÉRER TÂCHE TERMINÉE - ENVOI EN TEMPS RÉEL
+     */
+    private function handleTaskCompleted(Task $task): void
+    {
+        try {
+            $completedBy = Auth::user()->name;
+            $completedById = Auth::id();
+            
+            Log::info('✅ Tâche terminée: ' . $task->title . ' par ' . $completedBy);
+            
+            // 1. Envoyer l'email au créateur de la tâche
+            if ($task->created_by) {
+                $creator = User::find($task->created_by);
+                if ($creator) {
+                    Mail::to($creator->email)->send(new TaskCompletedEmail(
+                        $creator,
+                        $task,
+                        $completedBy
+                    ));
+                    Log::info('📧 Email tâche terminée envoyé à: ' . $creator->email);
+                }
+            }
+            
+            // 2. Envoyer l'email à la personne assignée (si différente du créateur)
+            if ($task->assigned_to && $task->assigned_to !== $task->created_by) {
+                $assignedUser = User::find($task->assigned_to);
+                if ($assignedUser) {
+                    Mail::to($assignedUser->email)->send(new TaskCompletedEmail(
+                        $assignedUser,
+                        $task,
+                        $completedBy
+                    ));
+                    Log::info('📧 Email tâche terminée envoyé à: ' . $assignedUser->email);
+                }
+            }
+            
+            // 3. Créer une notification en base de données pour le créateur
+            $this->createNotification(
+                $task->created_by,
+                "✅ Tâche terminée : {$task->title} par {$completedBy}",
+                'task_completed',
+                $task
+            );
+            
+            // 4. Créer une notification pour la personne assignée (si différente)
+            if ($task->assigned_to && $task->assigned_to !== $task->created_by) {
+                $this->createNotification(
+                    $task->assigned_to,
+                    "✅ Tâche terminée : {$task->title} par {$completedBy}",
+                    'task_completed',
+                    $task
+                );
+            }
+            
+            // 5. 🔥 DIFFUSER EN TEMPS RÉEL VIA WEBSOCKET (Pusher)
+            $this->broadcastTaskEvent('task.completed', $task);
+            
+            // 6. 🔥 DIFFUSER UNE NOTIFICATION SPÉCIFIQUE POUR LE FRONTEND
+            $this->broadcastTaskCompletedNotification($task, $completedBy);
+            
+            Log::info('✅ Notifications tâche terminée envoyées pour: ' . $task->title);
+            
+        } catch (\Exception $e) {
+            Log::error('❌ Erreur notification tâche terminée: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 🔥 GÉRER TÂCHE ASSIGNÉE
+     */
+    private function handleTaskAssigned(Task $task): void
+    {
+        try {
+            $assignedUser = User::find($task->assigned_to);
+            $assigner = Auth::user();
+            
+            if ($assignedUser && $assignedUser->id !== $assigner->id) {
+                // 1. Envoyer l'email
+                Mail::to($assignedUser->email)->send(new TaskAssignedEmail(
+                    $assignedUser,
+                    $task,
+                    $assigner->name
+                ));
+                Log::info('📧 Email d\'assignation envoyé à: ' . $assignedUser->email);
+                
+                // 2. Créer une notification
+                $this->createNotification(
+                    $task->assigned_to,
+                    "📋 Nouvelle tâche assignée : {$task->title} par {$assigner->name}",
+                    'task_assigned',
+                    $task
+                );
+                
+                // 3. Diffuser via WebSocket
+                $this->broadcastTaskEvent('task.assigned', $task);
+            }
+        } catch (\Exception $e) {
+            Log::error('❌ Erreur notification assignation: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 🔥 CRÉER UNE NOTIFICATION EN BASE DE DONNÉES
+     */
+    private function createNotification(int $userId, string $message, string $type, Task $task): void
+    {
+        try {
+            Notification::create([
+                'user_id' => $userId,
+                'workspace_id' => $task->workspace_id,
+                'created_by' => Auth::id(),
+                'type' => $type,
+                'message' => $message,
+                'data' => json_encode([
+                    'task_id' => $task->id,
+                    'task_title' => $task->title,
+                    'due_date' => $task->due_date,
+                    'status' => $task->status,
+                ]),
+                'is_read' => false,
+            ]);
+            
+            Log::info('📝 Notification créée pour utilisateur ' . $userId . ' (type: ' . $type . ')');
+        } catch (\Exception $e) {
+            Log::error('❌ Erreur création notification: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 🔥 DIFFUSER UN ÉVÉNEMENT TÂCHE VIA WEBSOCKET
+     */
+    private function broadcastTaskEvent(string $event, Task $task): void
+    {
+        try {
+            $pusher = new PusherClient(
+                env('PUSHER_APP_KEY'),
+                env('PUSHER_APP_SECRET'),
+                env('PUSHER_APP_ID'),
+                ['cluster' => 'eu', 'useTLS' => true]
+            );
+            
+            $data = [
+                'id' => $task->id,
+                'title' => $task->title,
+                'status' => $task->status,
+                'workspace_id' => $task->workspace_id,
+                'user_id' => Auth::id(),
+                'user_name' => Auth::user()->name,
+                'timestamp' => now()->toIso8601String()
+            ];
+            
+            $pusher->trigger('tasks', $event, $data);
+            
+            Log::info("📡 Événement {$event} diffusé pour la tâche {$task->id}");
+        } catch (\Exception $e) {
+            Log::error('❌ Erreur broadcast: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 🔥 DIFFUSER UNE NOTIFICATION SPÉCIFIQUE DE TÂCHE TERMINÉE
+     * Pour que le frontend affiche une notification toast
+     */
+    private function broadcastTaskCompletedNotification(Task $task, string $completedBy): void
+    {
+        try {
+            $pusher = new PusherClient(
+                env('PUSHER_APP_KEY'),
+                env('PUSHER_APP_SECRET'),
+                env('PUSHER_APP_ID'),
+                ['cluster' => 'eu', 'useTLS' => true]
+            );
+            
+            // Diffuser sur le canal public pour les notifications
+            $data = [
+                'id' => 'task_completed_' . $task->id . '_' . time(),
+                'message' => "✅ Tâche terminée : {$task->title} par {$completedBy}",
+                'type' => 'task_completed',
+                'task_id' => $task->id,
+                'task_title' => $task->title,
+                'completed_by' => $completedBy,
+                'created_at' => now()->toIso8601String(),
+                'is_read' => false,
+            ];
+            
+            $pusher->trigger('public-channel', 'notification.new', $data);
+            
+            // Diffuser aussi sur le canal privé de l'utilisateur
+            if ($task->created_by) {
+                $pusher->trigger('private-user.' . $task->created_by, 'notification.new', $data);
+            }
+            
+            if ($task->assigned_to && $task->assigned_to !== $task->created_by) {
+                $pusher->trigger('private-user.' . $task->assigned_to, 'notification.new', $data);
+            }
+            
+            Log::info("📡 Notification tâche terminée diffusée pour la tâche {$task->id}");
+        } catch (\Exception $e) {
+            Log::error('❌ Erreur broadcast notification: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 🔥 FORCER la réorganisation - Version PHP (la plus fiable)
+     */
+    private function forceReorderColumn(int $columnId): void
+    {
+        try {
+            $tasks = Task::where('kanban_column_id', $columnId)
+                ->orderBy('position', 'asc')
+                ->get(['id']);
+            
+            foreach ($tasks as $index => $task) {
+                Task::where('id', $task->id)->update(['position' => $index]);
+            }
+            
+            Log::info("Colonne $columnId réorganisée avec succès");
+        } catch (\Exception $e) {
+            Log::error('Erreur reorder colonne ' . $columnId . ': ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Envoyer l'événement Pusher (legacy - conservé pour compatibilité)
+     */
+    private function sendPusherEvent(Task $task, int $oldColumnId, int $newColumnId, int $boardId, int $workspaceId): void
+    {
+        try {
+            $pusher = new PusherClient(
+                env('PUSHER_APP_KEY'),
+                env('PUSHER_APP_SECRET'),
+                env('PUSHER_APP_ID'),
+                ['cluster' => 'eu', 'useTLS' => true]
+            );
+            
+            $data = [
+                'id' => $task->id,
+                'title' => $task->title,
+                'source_column_id' => $oldColumnId,
+                'destination_column_id' => $newColumnId,
+                'position' => $task->position,
+                'board_id' => $boardId,
+                'workspace_id' => $workspaceId,
+                'user_id' => Auth::id(),
+                'user_name' => Auth::user()->name,
+                'timestamp' => now()->toIso8601String()
+            ];
+            
+            $pusher->trigger('tasks', 'task.moved', $data);
+            
+            Log::info('Pusher event sent: task.moved', ['task_id' => $task->id]);
+        } catch (\Exception $e) {
+            Log::error('Pusher error: ' . $e->getMessage());
         }
     }
 }

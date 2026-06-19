@@ -6,6 +6,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\EnsureWorkspaceAccess;
 use App\Http\Middleware\EnsureWorkspaceAdmin;
 use App\Http\Middleware\CleanJsonResponse;
+use App\Http\Middleware\CorsMiddleware;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -20,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'workspace.access' => EnsureWorkspaceAccess::class,
             'workspace.admin' => EnsureWorkspaceAdmin::class,
         ]);
+        $middleware->append(CorsMiddleware::class);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
