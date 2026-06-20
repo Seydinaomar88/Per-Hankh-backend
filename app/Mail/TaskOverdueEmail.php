@@ -28,7 +28,7 @@ class TaskOverdueEmail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: '🚨 Tâche en retard : ' . $this->task->title,
+            subject: 'Tâche en retard : ' . $this->task->title,
         );
     }
 

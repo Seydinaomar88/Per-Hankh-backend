@@ -21,7 +21,7 @@ class PasswordResetEmail extends Mailable
     {
         $this->user = $user;
         $this->token = $token;
-        // 🔥 URL du frontend pour la réinitialisation
+        // URL du frontend pour la réinitialisation
         $this->frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
     }
 

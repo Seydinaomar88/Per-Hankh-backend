@@ -24,14 +24,14 @@ class TaskAssignedEmail extends Mailable
         $this->user = $user;
         $this->task = $task;
         $this->assignedBy = $assignedBy;
-        // 🔥 URL du frontend
+        // URL du frontend
         $this->frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
     }
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Nouvelle tâche assignée 📋',
+            subject: 'Nouvelle tâche assignée',
         );
     }
 

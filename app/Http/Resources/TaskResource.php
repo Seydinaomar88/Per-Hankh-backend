@@ -33,6 +33,17 @@ class TaskResource extends JsonResource
             'tags' => $this->tags,
 
             /**
+             * AJOUTER LES IDs POUR LES PERMISSIONS
+             */
+            'created_by' => $this->created_by,
+
+            'assigned_to' => $this->assigned_to,
+
+            'kanban_column_id' => $this->kanban_column_id,
+
+            'workspace_id' => $this->workspace_id,
+
+            /**
              * DATES FORMATÉES
              */
             'created_at' => $this->created_at?->format('Y-m-d H:i:s'),

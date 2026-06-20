@@ -145,15 +145,13 @@ class TaskController extends Controller
                     ));
                     Log::info('Email d\'assignation envoyé à: ' . $assignedUser->email);
                     
-                    // 🔥 Créer une notification pour l'assignation
                     $this->createNotification(
                         $task->assigned_to,
-                        "📋 Nouvelle tâche assignée : {$task->title} par " . Auth::user()->name,
+                        "Nouvelle tâche assignée : {$task->title} par " . Auth::user()->name,
                         'task_assigned',
                         $task
                     );
                     
-                    // 🔥 Diffuser via WebSocket pour l'assignation
                     $this->broadcastTaskEvent('task.assigned', $task);
                 } catch (\Exception $e) {
                     Log::error('Erreur envoi email d\'assignation: ' . $e->getMessage());
@@ -189,7 +187,7 @@ class TaskController extends Controller
     }
 
     /**
-     * UPDATE TASK - AVEC GESTION DES NOTIFICATIONS EN TEMPS RÉEL
+     * UPDATE TASK - AVEC GESTION DES PERMISSIONS ET NOTIFICATIONS EN TEMPS RÉEL
      */
     public function update(
         UpdateTaskRequest $request,
@@ -206,23 +204,45 @@ class TaskController extends Controller
             ], 403);
         }
 
-        // 🔥 Sauvegarder l'ancien statut et l'ancien assigné
+        // VÉRIFICATION DES PERMISSIONS
+        $user = Auth::user();
+        $member = $workspace->users()->where('user_id', $user->id)->first();
+        $role = $member ? $member->pivot->role : null;
+
+        $canEdit = false;
+        
+        if (in_array($role, ['owner', 'admin'])) {
+            $canEdit = true;
+        } elseif ($task->created_by === $user->id) {
+            $canEdit = true;
+        } elseif ($task->assigned_to === $user->id) {
+            $canEdit = true;
+        }
+
+        if (!$canEdit) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Vous n\'êtes pas autorisé à modifier cette tâche.'
+            ], 403);
+        }
+
         $oldStatus = $task->status;
         $oldAssignedTo = $task->assigned_to;
 
         $task->update($request->validated());
 
-        // 🔥 VÉRIFIER SI LA TÂCHE EST TERMINÉE (notification en temps réel)
         if ($task->status === 'done' && $oldStatus !== 'done') {
             $this->handleTaskCompleted($task);
         }
 
-        // 🔥 VÉRIFIER SI L'ASSIGNATION A CHANGÉ
         if ($task->assigned_to && $task->assigned_to !== $oldAssignedTo) {
             $this->handleTaskAssigned($task);
         }
 
         $task->load(['creator', 'assignedUser', 'files']);
+
+        // DIFFUSER LA MISE À JOUR EN TEMPS RÉEL
+        $this->broadcastTaskEvent('task.updated', $task);
 
         return response()->json([
             'status' => true,
@@ -232,7 +252,7 @@ class TaskController extends Controller
     }
 
     /**
-     * DELETE TASK
+     * DELETE TASK - AVEC VÉRIFICATION DES PERMISSIONS
      */
     public function destroy(
         Workspace $workspace,
@@ -248,7 +268,30 @@ class TaskController extends Controller
             ], 403);
         }
 
+        // VÉRIFICATION DES PERMISSIONS
+        $user = Auth::user();
+        $member = $workspace->users()->where('user_id', $user->id)->first();
+        $role = $member ? $member->pivot->role : null;
+
+        $canDelete = false;
+        
+        if (in_array($role, ['owner', 'admin'])) {
+            $canDelete = true;
+        } elseif ($task->created_by === $user->id) {
+            $canDelete = true;
+        }
+
+        if (!$canDelete) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Vous n\'êtes pas autorisé à supprimer cette tâche.'
+            ], 403);
+        }
+
         $task->delete();
+
+        // DIFFUSER LA SUPPRESSION EN TEMPS RÉEL
+        $this->broadcastTaskEvent('task.deleted', $task);
 
         return response()->json([
             'status' => true,
@@ -257,7 +300,7 @@ class TaskController extends Controller
     }
 
     /**
-     * MOVE TASK - OPTIMISÉ ET RAPIDE AVEC BROADCAST EN TEMPS RÉEL
+     * MOVE TASK - OPTIMISÉ ET RAPIDE
      */
     public function move(
         MoveTaskRequest $request,
@@ -300,7 +343,7 @@ class TaskController extends Controller
 
         $oldColumnId = $task->kanban_column_id;
         
-        Log::info('🔄 MOVE TASK', [
+        Log::info('MOVE TASK', [
             'task_id' => $task->id,
             'old_column' => $oldColumnId,
             'new_column' => $request->kanban_column_id,
@@ -314,17 +357,13 @@ class TaskController extends Controller
             'position' => $request->position,
         ]);
 
-        /**
-         * REORGANISER LES POSITIONS DES TÂCHES
-         */
-        $this->forceReorderColumn($request->kanban_column_id);
+        $this->reorderColumn($request->kanban_column_id);
         if ($oldColumnId !== $request->kanban_column_id) {
-            $this->forceReorderColumn($oldColumnId);
+            $this->reorderColumn($oldColumnId);
         }
 
         $task->load(['creator', 'assignedUser', 'files']);
 
-        // 🔥 ENVOYER L'ÉVÉNEMENT PUSHER AVEC LES INFOS UTILISATEUR
         $this->sendPusherEventWithUser($task, $oldColumnId, $request->kanban_column_id, $board->id, $workspace->id, $user);
 
         return response()->json([
@@ -335,7 +374,28 @@ class TaskController extends Controller
     }
 
     /**
-     * 🔥 ENVOYER L'ÉVÉNEMENT PUSHER AVEC LES INFOS UTILISATEUR
+     * REORGANISER LES POSITIONS
+     */
+    private function reorderColumn(int $columnId): void
+    {
+        try {
+            $tasks = Task::where('kanban_column_id', $columnId)
+                ->orderBy('position', 'asc')
+                ->get();
+            
+            foreach ($tasks as $index => $task) {
+                $task->position = $index;
+                $task->save();
+            }
+            
+            Log::info("Colonne $columnId réorganisée avec succès");
+        } catch (\Exception $e) {
+            Log::error('Erreur reorder colonne ' . $columnId . ': ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * ENVOYER L'ÉVÉNEMENT PUSHER AVEC LES INFOS UTILISATEUR
      */
     private function sendPusherEventWithUser(Task $task, int $oldColumnId, int $newColumnId, int $boardId, int $workspaceId, User $user): void
     {
@@ -351,7 +411,6 @@ class TaskController extends Controller
                 ]
             );
             
-            // 🔥 Données complètes pour le frontend
             $data = [
                 'id' => $task->id,
                 'title' => $task->title,
@@ -365,31 +424,29 @@ class TaskController extends Controller
                 'timestamp' => now()->toIso8601String()
             ];
             
-            // 🔥 Diffuser sur le canal 'tasks' avec l'événement 'task.moved'
             $pusher->trigger('tasks', 'task.moved', $data);
+            $pusher->trigger('workspace.' . $workspaceId, 'task.moved', $data);
             
-            Log::info('📡 Pusher event sent: task.moved', [
+            Log::info('Pusher event sent: task.moved', [
                 'task_id' => $task->id,
                 'user_id' => $user->id,
                 'user_name' => $user->name
             ]);
         } catch (\Exception $e) {
-            Log::error('❌ Pusher error: ' . $e->getMessage());
+            Log::error('Pusher error: ' . $e->getMessage());
         }
     }
 
     /**
-     * 🔥 GÉRER TÂCHE TERMINÉE - ENVOI EN TEMPS RÉEL
+     * GÉRER TÂCHE TERMINÉE
      */
     private function handleTaskCompleted(Task $task): void
     {
         try {
             $completedBy = Auth::user()->name;
-            $completedById = Auth::id();
             
-            Log::info('✅ Tâche terminée: ' . $task->title . ' par ' . $completedBy);
+            Log::info('Tâche terminée: ' . $task->title . ' par ' . $completedBy);
             
-            // 1. Envoyer l'email au créateur de la tâche
             if ($task->created_by) {
                 $creator = User::find($task->created_by);
                 if ($creator) {
@@ -398,11 +455,10 @@ class TaskController extends Controller
                         $task,
                         $completedBy
                     ));
-                    Log::info('📧 Email tâche terminée envoyé à: ' . $creator->email);
+                    Log::info(' Email tâche terminée envoyé à: ' . $creator->email);
                 }
             }
             
-            // 2. Envoyer l'email à la personne assignée (si différente du créateur)
             if ($task->assigned_to && $task->assigned_to !== $task->created_by) {
                 $assignedUser = User::find($task->assigned_to);
                 if ($assignedUser) {
@@ -411,43 +467,38 @@ class TaskController extends Controller
                         $task,
                         $completedBy
                     ));
-                    Log::info('📧 Email tâche terminée envoyé à: ' . $assignedUser->email);
+                    Log::info('Email tâche terminée envoyé à: ' . $assignedUser->email);
                 }
             }
             
-            // 3. Créer une notification en base de données pour le créateur
             $this->createNotification(
                 $task->created_by,
-                "✅ Tâche terminée : {$task->title} par {$completedBy}",
+                "Tâche terminée : {$task->title} par {$completedBy}",
                 'task_completed',
                 $task
             );
             
-            // 4. Créer une notification pour la personne assignée (si différente)
             if ($task->assigned_to && $task->assigned_to !== $task->created_by) {
                 $this->createNotification(
                     $task->assigned_to,
-                    "✅ Tâche terminée : {$task->title} par {$completedBy}",
+                    "Tâche terminée : {$task->title} par {$completedBy}",
                     'task_completed',
                     $task
                 );
             }
             
-            // 5. 🔥 DIFFUSER EN TEMPS RÉEL VIA WEBSOCKET (Pusher)
             $this->broadcastTaskEvent('task.completed', $task);
-            
-            // 6. 🔥 DIFFUSER UNE NOTIFICATION SPÉCIFIQUE POUR LE FRONTEND
             $this->broadcastTaskCompletedNotification($task, $completedBy);
             
-            Log::info('✅ Notifications tâche terminée envoyées pour: ' . $task->title);
+            Log::info('Notifications tâche terminée envoyées pour: ' . $task->title);
             
         } catch (\Exception $e) {
-            Log::error('❌ Erreur notification tâche terminée: ' . $e->getMessage());
+            Log::error('Erreur notification tâche terminée: ' . $e->getMessage());
         }
     }
 
     /**
-     * 🔥 GÉRER TÂCHE ASSIGNÉE
+     * GÉRER TÂCHE ASSIGNÉE
      */
     private function handleTaskAssigned(Task $task): void
     {
@@ -456,32 +507,29 @@ class TaskController extends Controller
             $assigner = Auth::user();
             
             if ($assignedUser && $assignedUser->id !== $assigner->id) {
-                // 1. Envoyer l'email
                 Mail::to($assignedUser->email)->send(new TaskAssignedEmail(
                     $assignedUser,
                     $task,
                     $assigner->name
                 ));
-                Log::info('📧 Email d\'assignation envoyé à: ' . $assignedUser->email);
+                Log::info('Email d\'assignation envoyé à: ' . $assignedUser->email);
                 
-                // 2. Créer une notification
                 $this->createNotification(
                     $task->assigned_to,
-                    "📋 Nouvelle tâche assignée : {$task->title} par {$assigner->name}",
+                    "Nouvelle tâche assignée : {$task->title} par {$assigner->name}",
                     'task_assigned',
                     $task
                 );
                 
-                // 3. Diffuser via WebSocket
                 $this->broadcastTaskEvent('task.assigned', $task);
             }
         } catch (\Exception $e) {
-            Log::error('❌ Erreur notification assignation: ' . $e->getMessage());
+            Log::error('Erreur notification assignation: ' . $e->getMessage());
         }
     }
 
     /**
-     * 🔥 CRÉER UNE NOTIFICATION EN BASE DE DONNÉES
+     * CRÉER UNE NOTIFICATION EN BASE DE DONNÉES
      */
     private function createNotification(int $userId, string $message, string $type, Task $task): void
     {
@@ -501,14 +549,14 @@ class TaskController extends Controller
                 'is_read' => false,
             ]);
             
-            Log::info('📝 Notification créée pour utilisateur ' . $userId . ' (type: ' . $type . ')');
+            Log::info('Notification créée pour utilisateur ' . $userId . ' (type: ' . $type . ')');
         } catch (\Exception $e) {
-            Log::error('❌ Erreur création notification: ' . $e->getMessage());
+            Log::error('Erreur création notification: ' . $e->getMessage());
         }
     }
 
     /**
-     * 🔥 DIFFUSER UN ÉVÉNEMENT TÂCHE VIA WEBSOCKET
+     * DIFFUSER UN ÉVÉNEMENT TÂCHE VIA WEBSOCKET
      */
     private function broadcastTaskEvent(string $event, Task $task): void
     {
@@ -523,7 +571,12 @@ class TaskController extends Controller
             $data = [
                 'id' => $task->id,
                 'title' => $task->title,
+                'description' => $task->description,
                 'status' => $task->status,
+                'priority' => $task->priority,
+                'assigned_to' => $task->assigned_to,
+                'due_date' => $task->due_date,
+                'tags' => $task->tags,
                 'workspace_id' => $task->workspace_id,
                 'user_id' => Auth::id(),
                 'user_name' => Auth::user()->name,
@@ -531,16 +584,16 @@ class TaskController extends Controller
             ];
             
             $pusher->trigger('tasks', $event, $data);
+            $pusher->trigger('workspace.' . $task->workspace_id, $event, $data);
             
-            Log::info("📡 Événement {$event} diffusé pour la tâche {$task->id}");
+            Log::info("Événement {$event} diffusé pour la tâche {$task->id}");
         } catch (\Exception $e) {
-            Log::error('❌ Erreur broadcast: ' . $e->getMessage());
+            Log::error('Erreur broadcast: ' . $e->getMessage());
         }
     }
 
     /**
-     * 🔥 DIFFUSER UNE NOTIFICATION SPÉCIFIQUE DE TÂCHE TERMINÉE
-     * Pour que le frontend affiche une notification toast
+     * DIFFUSER UNE NOTIFICATION SPÉCIFIQUE DE TÂCHE TERMINÉE
      */
     private function broadcastTaskCompletedNotification(Task $task, string $completedBy): void
     {
@@ -552,10 +605,9 @@ class TaskController extends Controller
                 ['cluster' => 'eu', 'useTLS' => true]
             );
             
-            // Diffuser sur le canal public pour les notifications
             $data = [
                 'id' => 'task_completed_' . $task->id . '_' . time(),
-                'message' => "✅ Tâche terminée : {$task->title} par {$completedBy}",
+                'message' => "Tâche terminée : {$task->title} par {$completedBy}",
                 'type' => 'task_completed',
                 'task_id' => $task->id,
                 'task_title' => $task->title,
@@ -566,7 +618,6 @@ class TaskController extends Controller
             
             $pusher->trigger('public-channel', 'notification.new', $data);
             
-            // Diffuser aussi sur le canal privé de l'utilisateur
             if ($task->created_by) {
                 $pusher->trigger('private-user.' . $task->created_by, 'notification.new', $data);
             }
@@ -575,34 +626,14 @@ class TaskController extends Controller
                 $pusher->trigger('private-user.' . $task->assigned_to, 'notification.new', $data);
             }
             
-            Log::info("📡 Notification tâche terminée diffusée pour la tâche {$task->id}");
+            Log::info("Notification tâche terminée diffusée pour la tâche {$task->id}");
         } catch (\Exception $e) {
-            Log::error('❌ Erreur broadcast notification: ' . $e->getMessage());
+            Log::error('Erreur broadcast notification: ' . $e->getMessage());
         }
     }
 
     /**
-     * 🔥 FORCER la réorganisation - Version PHP (la plus fiable)
-     */
-    private function forceReorderColumn(int $columnId): void
-    {
-        try {
-            $tasks = Task::where('kanban_column_id', $columnId)
-                ->orderBy('position', 'asc')
-                ->get(['id']);
-            
-            foreach ($tasks as $index => $task) {
-                Task::where('id', $task->id)->update(['position' => $index]);
-            }
-            
-            Log::info("Colonne $columnId réorganisée avec succès");
-        } catch (\Exception $e) {
-            Log::error('Erreur reorder colonne ' . $columnId . ': ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Envoyer l'événement Pusher (legacy - conservé pour compatibilité)
+     * Envoyer l'événement Pusher (legacy)
      */
     private function sendPusherEvent(Task $task, int $oldColumnId, int $newColumnId, int $boardId, int $workspaceId): void
     {

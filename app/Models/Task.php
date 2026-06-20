@@ -14,7 +14,7 @@ class Task extends Model
 {
     use HasFactory;
 
-    // 🔥 CONSTANTES DE STATUT
+    // CONSTANTES DE STATUT
     const STATUS_NOT_STARTED = 'not_started';
     const STATUS_IN_PROGRESS = 'in_progress';
     const STATUS_REVIEW = 'review';
@@ -43,7 +43,7 @@ class Task extends Model
         'description',
         'due_date',
         'priority',
-        'status', // 🔥 AJOUTER status
+        'status',
         'position',
         'tags',
     ];

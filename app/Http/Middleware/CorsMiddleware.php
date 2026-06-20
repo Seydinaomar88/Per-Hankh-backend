@@ -5,7 +5,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response; // 🔥 AJOUTER CET IMPORT
+use Illuminate\Http\Response;
 
 class CorsMiddleware
 {
@@ -26,7 +26,7 @@ class CorsMiddleware
     /**
      * @param \Illuminate\Http\Response|\Illuminate\Http\JsonResponse $response
      */
-    private function setCorsHeaders($response): void // 🔥 AJOUTER LE TYPE DE RETOUR
+    private function setCorsHeaders($response): void
     {
         $response->headers->set('Access-Control-Allow-Origin', 'http://localhost:3000');
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
