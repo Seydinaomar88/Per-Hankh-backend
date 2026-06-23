@@ -109,7 +109,7 @@ class TaskController extends Controller
     }
 
     /**
-     * STORE TASK
+     * STORE TASK - AVEC DIFFUSION WEBSOCKET EN TEMPS RÉEL
      */
     public function store(
         StoreTaskRequest $request,
@@ -161,11 +161,89 @@ class TaskController extends Controller
 
         $task->load(['creator', 'assignedUser', 'files']);
 
+        //  DIFFUSER LA CRÉATION EN TEMPS RÉEL
+        $this->broadcastTaskCreated($task, $column->id, $workspace->id);
+
         return response()->json([
             'status' => true,
             'message' => 'Task created successfully',
             'task' => new TaskResource($task)
         ], 201);
+    }
+
+    /**
+     * DIFFUSER LA CRÉATION DE TÂCHE VIA WEBSOCKET
+     */
+    private function broadcastTaskCreated(Task $task, int $columnId, int $workspaceId): void
+    {
+        try {
+            $pusher = new PusherClient(
+                env('PUSHER_APP_KEY'),
+                env('PUSHER_APP_SECRET'),
+                env('PUSHER_APP_ID'),
+                [
+                    'cluster' => env('PUSHER_CLUSTER', 'eu'),
+                    'useTLS' => true,
+                    'encrypted' => true,
+                ]
+            );
+            
+            $user = Auth::user();
+            
+            $data = [
+                'id' => $task->id,
+                'title' => $task->title,
+                'description' => $task->description,
+                'status' => $task->status,
+                'priority' => $task->priority,
+                'column_id' => $columnId,
+                'position' => $task->position,
+                'assigned_to' => $task->assigned_to,
+                'due_date' => $task->due_date,
+                'tags' => $task->tags,
+                'workspace_id' => $workspaceId,
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'timestamp' => now()->toIso8601String(),
+                'task' => [
+                    'id' => $task->id,
+                    'title' => $task->title,
+                    'column_id' => $columnId,
+                    'status' => $task->status,
+                    'description' => $task->description,
+                    'priority' => $task->priority,
+                    'position' => $task->position,
+                    'assigned_to' => $task->assigned_to,
+                    'due_date' => $task->due_date,
+                    'tags' => $task->tags,
+                    'created_at' => $task->created_at?->toISOString(),
+                    'creator' => $task->creator ? [
+                        'id' => $task->creator->id,
+                        'name' => $task->creator->name,
+                        'email' => $task->creator->email,
+                    ] : null,
+                    'assignedUser' => $task->assignedUser ? [
+                        'id' => $task->assignedUser->id,
+                        'name' => $task->assignedUser->name,
+                        'email' => $task->assignedUser->email,
+                    ] : null,
+                ]
+            ];
+            
+            // Diffuser sur le canal global des tâches
+            $pusher->trigger('tasks', 'task.created', $data);
+            
+            // Diffuser sur le canal du workspace
+            $pusher->trigger('workspace.' . $workspaceId, 'task.created', $data);
+            
+            Log::info('Pusher event sent: task.created', [
+                'task_id' => $task->id,
+                'workspace_id' => $workspaceId,
+                'user_id' => $user->id
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Pusher error broadcastTaskCreated: ' . $e->getMessage());
+        }
     }
 
     /**
