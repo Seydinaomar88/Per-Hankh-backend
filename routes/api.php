@@ -14,7 +14,7 @@ use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\FileController;
 use App\Http\Controllers\Api\V1\TaskFileController;
 use App\Http\Controllers\Api\V1\PresenceController;
-use App\Http\Controllers\Api\V1\BroadcastController; 
+use App\Http\Controllers\Api\V1\BroadcastController;
 
 Route::prefix("v1")->group(function () {
 
@@ -28,7 +28,7 @@ Route::prefix("v1")->group(function () {
     // PROTECTED ROUTES
     Route::middleware("auth:sanctum")->group(function () {
 
-       Route::post('/broadcasting/auth', [BroadcastController::class, 'auth']);
+        Route::post('/broadcasting/auth', [BroadcastController::class, 'auth']);
 
         // AUTH USER
         Route::post("/logout", [AuthController::class, "logout"]);
@@ -137,6 +137,8 @@ Route::prefix("v1")->group(function () {
                 // FILES
                 Route::delete("/workspaces/{workspace}/files/{file}", [FileController::class, "destroy"]);
             });
+
+            Route::get('/tasks/check-overdue', [TaskController::class, 'checkOverdueTasks'])->middleware('auth:sanctum');
         });
     });
 });

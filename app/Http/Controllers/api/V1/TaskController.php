@@ -27,6 +27,7 @@ use Pusher\Pusher as PusherClient;
 use App\Mail\TaskAssignedEmail;
 use App\Mail\TaskCompletedEmail;
 use App\Mail\TaskOverdueEmail;
+use Carbon\Carbon;
 
 class TaskController extends Controller
 {
@@ -608,6 +609,12 @@ class TaskController extends Controller
 
     /**
      * CRÉER UNE NOTIFICATION EN BASE DE DONNÉES
+     * 
+     * @param int $userId
+     * @param string $message
+     * @param string $type
+     * @param Task $task
+     * @return void
      */
     private function createNotification(int $userId, string $message, string $type, Task $task): void
     {
@@ -741,6 +748,113 @@ class TaskController extends Controller
             Log::info('Pusher event sent: task.moved', ['task_id' => $task->id]);
         } catch (\Exception $e) {
             Log::error('Pusher error: ' . $e->getMessage());
+        }
+    }
+
+    // 🔥 NOUVELLES MÉTHODES POUR LES TÂCHES EN RETARD
+
+    /**
+     * Vérifier et envoyer les notifications pour les tâches en retard
+     * 
+     * @return JsonResponse
+     */
+    public function checkOverdueTasks(): JsonResponse
+    {
+        try {
+            $overdueTasks = Task::with(['assignedUser', 'creator', 'workspace'])
+                ->where('due_date', '<', Carbon::now())
+                ->where('status', '!=', 'done')
+                ->whereNotNull('due_date')
+                ->get();
+
+            $count = 0;
+
+            foreach ($overdueTasks as $task) {
+                // Vérifier si une notification a déjà été envoyée aujourd'hui
+                $existingNotification = Notification::where('type', 'task_overdue')
+                    ->where('data', 'LIKE', '%"task_id":' . $task->id . '%')
+                    ->whereDate('created_at', Carbon::today())
+                    ->exists();
+
+                if (!$existingNotification) {
+                    $this->sendOverdueNotification($task);
+                    $count++;
+                    Log::info("✅ Notification de retard envoyée pour la tâche: {$task->title}");
+                }
+            }
+
+            return response()->json([
+                'status' => true,
+                'message' => "{$count} notification(s) de retard envoyée(s)",
+                'count' => $count
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('❌ Erreur vérification tâches en retard: ' . $e->getMessage());
+            return response()->json([
+                'status' => false,
+                'message' => 'Erreur lors de l\'envoi des notifications'
+            ], 500);
+        }
+    }
+
+    /**
+     * Envoyer les notifications pour une tâche en retard
+     * 
+     * @param Task $task
+     * @return void
+     */
+    private function sendOverdueNotification(Task $task): void
+    {
+        try {
+            // Notification pour le créateur
+            if ($task->created_by) {
+                $this->createNotification(
+                    $task->created_by,
+                    'Votre tâche "' . $task->title . '" est en retard !',
+                    'task_overdue',
+                    $task
+                );
+            }
+
+            // Notification pour l'assigné
+            if ($task->assigned_to && $task->assigned_to !== $task->created_by) {
+                $this->createNotification(
+                    $task->assigned_to,
+                    'La tâche "' . $task->title . '" qui vous est assignée est en retard !',
+                    'task_overdue',
+                    $task
+                );
+            }
+
+            // Email à l'assigné
+            if ($task->assigned_to) {
+                $assignedUser = User::find($task->assigned_to);
+                if ($assignedUser && $assignedUser->email) {
+                    try {
+                        Mail::to($assignedUser->email)->send(new TaskOverdueEmail($assignedUser, $task));
+                        Log::info("📧 Email retard envoyé à: {$assignedUser->email}");
+                    } catch (\Exception $e) {
+                        Log::error('❌ Erreur email assigné: ' . $e->getMessage());
+                    }
+                }
+            }
+
+            // Email au créateur si différent
+            if ($task->created_by && $task->created_by !== $task->assigned_to) {
+                $creator = User::find($task->created_by);
+                if ($creator && $creator->email) {
+                    try {
+                        Mail::to($creator->email)->send(new TaskOverdueEmail($creator, $task));
+                        Log::info("📧 Email retard envoyé au créateur: {$creator->email}");
+                    } catch (\Exception $e) {
+                        Log::error('❌ Erreur email créateur: ' . $e->getMessage());
+                    }
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::error('❌ Erreur envoi notification retard: ' . $e->getMessage());
         }
     }
 }
