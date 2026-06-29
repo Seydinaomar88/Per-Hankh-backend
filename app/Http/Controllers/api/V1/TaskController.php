@@ -790,7 +790,7 @@ class TaskController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('❌ Erreur vérification tâches en retard: ' . $e->getMessage());
+            Log::error(' Erreur vérification tâches en retard: ' . $e->getMessage());
             return response()->json([
                 'status' => false,
                 'message' => 'Erreur lors de l\'envoi des notifications'
@@ -833,9 +833,9 @@ class TaskController extends Controller
                 if ($assignedUser && $assignedUser->email) {
                     try {
                         Mail::to($assignedUser->email)->send(new TaskOverdueEmail($assignedUser, $task));
-                        Log::info("📧 Email retard envoyé à: {$assignedUser->email}");
+                        Log::info("Email retard envoyé à: {$assignedUser->email}");
                     } catch (\Exception $e) {
-                        Log::error('❌ Erreur email assigné: ' . $e->getMessage());
+                        Log::error(' Erreur email assigné: ' . $e->getMessage());
                     }
                 }
             }
@@ -846,15 +846,15 @@ class TaskController extends Controller
                 if ($creator && $creator->email) {
                     try {
                         Mail::to($creator->email)->send(new TaskOverdueEmail($creator, $task));
-                        Log::info("📧 Email retard envoyé au créateur: {$creator->email}");
+                        Log::info("Email retard envoyé au créateur: {$creator->email}");
                     } catch (\Exception $e) {
-                        Log::error('❌ Erreur email créateur: ' . $e->getMessage());
+                        Log::error('Erreur email créateur: ' . $e->getMessage());
                     }
                 }
             }
 
         } catch (\Exception $e) {
-            Log::error('❌ Erreur envoi notification retard: ' . $e->getMessage());
+            Log::error('Erreur envoi notification retard: ' . $e->getMessage());
         }
     }
 }
