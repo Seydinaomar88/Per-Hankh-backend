@@ -3,6 +3,45 @@ set -e
 
 echo "🚀 Démarrage de PER ANKH..."
 
+# === DIAGNOSTIC ===
+echo "📂 VÉRIFICATION CRITIQUE :"
+ls -la /var/www/public/ 2>/dev/null || echo "❌ /var/www/public n'existe pas"
+
+if [ ! -f "/var/www/public/index.php" ]; then
+    echo "❌ CRITIQUE : index.php manquant !"
+    echo "Création d'un fichier index.php de secours..."
+    mkdir -p /var/www/public
+    cat > /var/www/public/index.php << 'EOF'
+<?php
+
+use Illuminate\Foundation\Application;
+use Illuminate\Http\Request;
+
+define('LARAVEL_START', microtime(true));
+
+// Determine if the application is in maintenance mode...
+if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
+    require $maintenance;
+}
+
+// Register the Composer autoloader...
+require __DIR__.'/../vendor/autoload.php';
+
+// Bootstrap Laravel and handle the request...
+/** @var Application $app */
+$app = require_once __DIR__.'/../bootstrap/app.php';
+
+$app->handleRequest(Request::capture());
+EOF
+    chmod 644 /var/www/public/index.php
+    chown www-data:www-data /var/www/public/index.php
+    echo "✅ index.php créé"
+else
+    echo "✅ index.php présent"
+    head -n 3 /var/www/public/index.php
+fi
+# === FIN DIAGNOSTIC ===
+
 # Variables d'environnement par défaut si non définies
 export APP_ENV=${APP_ENV:-production}
 export APP_DEBUG=${APP_DEBUG:-false}

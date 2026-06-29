@@ -37,6 +37,44 @@ RUN composer install --optimize-autoloader --no-interaction --no-dev --no-script
 # Copier le reste de l'application
 COPY . .
 
+# === VÉRIFICATION ET CORRECTION ===
+RUN echo "📂 Vérification de la structure..." && \
+    ls -la /var/www/ && \
+    ls -la /var/www/public/ && \
+    if [ ! -f /var/www/public/index.php ]; then \
+        echo "❌ index.php manquant ! Création d'un fichier de secours..."; \
+        echo '<?php' > /var/www/public/index.php && \
+        echo '/**' >> /var/www/public/index.php && \
+        echo ' * Laravel - A PHP Framework For Web Artisans' >> /var/www/public/index.php && \
+        echo ' *' >> /var/www/public/index.php && \
+        echo ' * @package  Laravel' >> /var/www/public/index.php && \
+        echo ' * @author   Taylor Otwell <taylor@laravel.com>' >> /var/www/public/index.php && \
+        echo ' */' >> /var/www/public/index.php && \
+        echo '' >> /var/www/public/index.php && \
+        echo 'use Illuminate\Foundation\Application;' >> /var/www/public/index.php && \
+        echo 'use Illuminate\Http\Request;' >> /var/www/public/index.php && \
+        echo '' >> /var/www/public/index.php && \
+        echo 'define("LARAVEL_START", microtime(true));' >> /var/www/public/index.php && \
+        echo '' >> /var/www/public/index.php && \
+        echo '// Determine if the application is in maintenance mode...' >> /var/www/public/index.php && \
+        echo 'if (file_exists($maintenance = __DIR__."/../storage/framework/maintenance.php")) {' >> /var/www/public/index.php && \
+        echo '    require $maintenance;' >> /var/www/public/index.php && \
+        echo '}' >> /var/www/public/index.php && \
+        echo '' >> /var/www/public/index.php && \
+        echo '// Register the Composer autoloader...' >> /var/www/public/index.php && \
+        echo 'require __DIR__."/../vendor/autoload.php";' >> /var/www/public/index.php && \
+        echo '' >> /var/www/public/index.php && \
+        echo '// Bootstrap Laravel and handle the request...' >> /var/www/public/index.php && \
+        echo '/** @var Application $app */' >> /var/www/public/index.php && \
+        echo '$app = require_once __DIR__."/../bootstrap/app.php";' >> /var/www/public/index.php && \
+        echo '' >> /var/www/public/index.php && \
+        echo '$app->handleRequest(Request::capture());' >> /var/www/public/index.php; \
+    else \
+        echo "✅ index.php présent"; \
+        cat /var/www/public/index.php | head -n 5; \
+    fi
+# === FIN VÉRIFICATION ===
+
 # Création des dossiers nécessaires
 RUN mkdir -p storage/framework/cache \
     && mkdir -p storage/framework/sessions \
@@ -63,9 +101,14 @@ RUN echo 'server { \
     server_name localhost; \
     root /var/www/public; \
     index index.php; \
+    \
+    error_log /var/log/nginx/error.log debug; \
+    access_log /var/log/nginx/access.log; \
+    \
     location / { \
         try_files $uri $uri/ /index.php?$query_string; \
     } \
+    \
     location ~ \.php$ { \
         fastcgi_pass 127.0.0.1:9000; \
         fastcgi_index index.php; \
@@ -76,9 +119,11 @@ RUN echo 'server { \
         fastcgi_connect_timeout 300; \
         fastcgi_send_timeout 300; \
     } \
+    \
     location /api { \
         try_files $uri $uri/ /index.php?$query_string; \
     } \
+    \
     location /broadcasting/auth { \
         try_files $uri $uri/ /index.php?$query_string; \
     } \
@@ -87,6 +132,7 @@ RUN echo 'server { \
 # Configuration Supervisord (inchangée)
 RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
     echo 'nodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'user=root' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo '[program:nginx]' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'command=nginx -g "daemon off;"' >> /etc/supervisor/conf.d/supervisord.conf && \
