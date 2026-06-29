@@ -3,46 +3,26 @@ set -e
 
 echo "🚀 Démarrage de PER ANKH..."
 
-# === DIAGNOSTIC COMPLET ===
-echo "📂 DIAGNOSTIC DE LA STRUCTURE :"
-echo "1. Contenu de /var/www/public :"
-ls -la /var/www/public/ 2>/dev/null || echo "❌ /var/www/public n'existe pas"
+# === CORRECTION DES PERMISSIONS ===
+echo "🔧 Correction des permissions..."
+# Changer le propriétaire de tous les fichiers pour www-data
+chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/public 2>/dev/null || true
+# Donner les droits de lecture/écriture
+chmod -R 775 /var/www/storage /var/www/bootstrap/cache /var/www/public 2>/dev/null || true
+# S'assurer que index.php est lisible
+chmod 644 /var/www/public/index.php 2>/dev/null || true
 
-echo "2. Recherche de index.php :"
-find /var/www -name "index.php" -type f 2>/dev/null
-
-echo "3. Permissions de index.php :"
-ls -la /var/www/public/index.php 2>/dev/null || echo "❌ index.php non trouvé"
-
-echo "4. Contenu de /etc/nginx/sites-enabled :"
-ls -la /etc/nginx/sites-enabled/
-
-echo "5. Configuration Nginx chargée :"
-cat /etc/nginx/sites-enabled/default | head -30
-
-echo "6. Test de configuration Nginx :"
-nginx -t 2>&1 || echo "❌ Erreur de configuration Nginx"
-
-echo "7. Vérification de l'utilisateur Nginx :"
-ps aux | grep nginx
-
-echo "8. Vérification de PHP-FPM :"
-ps aux | grep php-fpm
-
-echo "9. Test de connexion PHP-FPM :"
-echo "<?php echo 'PHP-FPM is working'; ?>" > /tmp/test.php
-SCRIPT_FILENAME=/tmp/test.php REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 /tmp/test.php 2>/dev/null || echo "❌ PHP-FPM ne répond pas"
-
-echo "10. Test de l'index.php :"
+# Vérification finale
 if [ -f "/var/www/public/index.php" ]; then
-    echo "✅ index.php existe"
-    head -n 5 /var/www/public/index.php
-    # Vérifier si le fichier est lisible par www-data
+    echo "✅ index.php trouvé"
+    echo "Permissions : $(ls -la /var/www/public/index.php)"
+    # Tester si www-data peut lire le fichier
     sudo -u www-data cat /var/www/public/index.php > /dev/null 2>&1 && echo "✅ index.php lisible par www-data" || echo "❌ index.php non lisible par www-data"
 else
     echo "❌ index.php manquant !"
+    exit 1
 fi
-# === FIN DIAGNOSTIC ===
+# === FIN CORRECTION ===
 
 # Variables d'environnement par défaut si non définies
 export APP_ENV=${APP_ENV:-production}
@@ -70,7 +50,7 @@ php artisan view:cache || true
 # Création du lien storage (ignore si déjà existant)
 php artisan storage:link 2>/dev/null || true
 
-# Permissions finales
+# Permissions finales après les commandes artisan
 chown -R www-data:www-data storage bootstrap/cache public/storage 2>/dev/null || true
 chmod -R 775 storage bootstrap/cache 2>/dev/null || true
 
