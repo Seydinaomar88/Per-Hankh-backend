@@ -1,7 +1,8 @@
 FROM php:8.2-fpm
 
-WORKDIR /var/www
+WORKDIR /var/www/html
 
+# Installation des dépendances système
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -21,31 +22,42 @@ RUN apt-get update && apt-get install -y \
     gd \
     zip
 
+# Installation de Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Créer les dossiers nécessaires
+# Copier uniquement les fichiers nécessaires pour les dépendances
+COPY composer.json composer.lock ./
+
+# Installer les dépendances SANS scripts
+RUN composer install --optimize-autoloader --no-interaction --no-dev --no-scripts
+
+# Copier le reste de l'application
+COPY . .
+
+# Création des dossiers nécessaires
 RUN mkdir -p storage/framework/cache \
     && mkdir -p storage/framework/sessions \
     && mkdir -p storage/framework/views \
     && mkdir -p storage/app/public \
     && mkdir -p bootstrap/cache
 
-COPY . .
-
-# Supprimer le lien symbolique s'il existe
+# Suppression du lien symbolique problématique
 RUN rm -rf public/storage || true
 
-# Créer un lien symbolique qui pointe vers le volume
-RUN ln -s /var/www/storage/app/public public/storage
+# Création du lien symbolique pour storage
+RUN ln -s /var/www/html/storage/app/public public/storage
 
 # Permissions
-RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/public/storage \
-    && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/public/storage \
+    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Optimisation
-RUN composer install --optimize-autoloader --no-interaction --no-dev \
-    && composer dump-autoload --optimize
+# Optimisation finale (sans scripts)
+RUN composer dump-autoload --optimize --no-scripts
 
-EXPOSE 9000
+# Script de démarrage qui gérera tout
+COPY start.sh /usr/local/bin/start.sh
+RUN chmod +x /usr/local/bin/start.sh
 
-CMD ["php-fpm"]
+EXPOSE 8000
+
+CMD ["/usr/local/bin/start.sh"]
