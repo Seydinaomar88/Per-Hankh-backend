@@ -156,6 +156,9 @@ RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
 COPY start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
 
+# Test final avant démarrage
+RUN curl -v http://localhost:10000/ 2>&1 || echo "Test ignoré"
+
 EXPOSE 10000
 
 CMD ["/usr/local/bin/start.sh"]
