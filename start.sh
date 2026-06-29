@@ -35,6 +35,6 @@ chmod -R 775 storage bootstrap/cache 2>/dev/null || true
 
 echo "✅ Application prête !"
 
-# Démarrer PHP-FPM (le port est géré automatiquement)
-echo "🌐 Démarrage de PHP-FPM..."
-exec php-fpm -F
+# Démarrer Supervisord (qui gère Nginx et PHP-FPM)
+echo "🌐 Démarrage de Nginx sur le port 10000 et PHP-FPM..."
+exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

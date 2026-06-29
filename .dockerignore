@@ -3,9 +3,6 @@ node_modules
 .git
 .gitignore
 README.md
-docker-compose.yml
-Dockerfile
-.dockerignore
 storage/logs/*.log
 storage/framework/cache
 storage/framework/sessions
@@ -16,8 +13,11 @@ bootstrap/cache/*.php
 *.sqlite
 *.sqlite-journal
 .DS_Store
-docker
+docker-compose.yml
+deploy.sh
+manage.sh
 *.md
 .phpunit.cache
 .idea
 .vscode
+public/storage

@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y \
     libxml2-dev \
     libpq-dev \
     libzip-dev \
+    nginx \
+    supervisor \
     && docker-php-ext-install \
     pdo \
     pdo_mysql \
@@ -54,10 +56,59 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 # Optimisation finale (sans scripts)
 RUN composer dump-autoload --optimize --no-scripts
 
-# Script de démarrage qui gérera tout
+# Configuration Nginx pour Render
+RUN echo 'server { \
+    listen 10000; \
+    server_name localhost; \
+    root /var/www/html/public; \
+    index index.php; \
+    location / { \
+        try_files $uri $uri/ /index.php?$query_string; \
+    } \
+    location ~ \.php$ { \
+        fastcgi_pass 127.0.0.1:9000; \
+        fastcgi_index index.php; \
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name; \
+        fastcgi_param PATH_INFO $fastcgi_path_info; \
+        include fastcgi_params; \
+        fastcgi_read_timeout 300; \
+        fastcgi_connect_timeout 300; \
+        fastcgi_send_timeout 300; \
+    } \
+    location /api { \
+        try_files $uri $uri/ /index.php?$query_string; \
+    } \
+    location /broadcasting/auth { \
+        try_files $uri $uri/ /index.php?$query_string; \
+    } \
+}' > /etc/nginx/sites-enabled/default
+
+# Configuration Supervisord
+RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'nodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo '[program:nginx]' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'command=nginx -g "daemon off;"' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stdout_logfile=/dev/stdout' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stdout_logfile_maxbytes=0' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stderr_logfile=/dev/stderr' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stderr_logfile_maxbytes=0' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo '[program:php-fpm]' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'command=php-fpm -F' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stdout_logfile=/dev/stdout' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stdout_logfile_maxbytes=0' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stderr_logfile=/dev/stderr' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stderr_logfile_maxbytes=0' >> /etc/supervisor/conf.d/supervisord.conf
+
+# Script de démarrage
 COPY start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
 
-EXPOSE 8000
+EXPOSE 10000
 
 CMD ["/usr/local/bin/start.sh"]
