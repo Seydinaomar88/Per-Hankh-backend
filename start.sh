@@ -35,8 +35,6 @@ chmod -R 775 storage bootstrap/cache 2>/dev/null || true
 
 echo "✅ Application prête !"
 
-# Le port 10000 est le port par défaut de Render
-echo "🌐 Démarrage sur le port 10000..."
-
-# Démarrer PHP-FPM sur le port 10000
-/usr/sbin/php-fpm --nodaemonize --port 10000
+# Démarrer PHP-FPM (le port est géré automatiquement)
+echo "🌐 Démarrage de PHP-FPM..."
+exec php-fpm -F
