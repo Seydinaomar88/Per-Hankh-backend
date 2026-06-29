@@ -4,16 +4,30 @@ set -e
 echo "🚀 Démarrage de PER ANKH..."
 
 # === CORRECTION DES PERMISSIONS ===
-echo "🔧 Correction des permissions..."
+echo "🔧 Correction des permissions des dossiers parents et fichiers..."
+
+# S'assurer que TOUS les dossiers parents sont traversables par tout le monde (+x)
+chmod 755 /var /var/www /var/www/public 2>/dev/null || true
+
+# Appliquer récursivement le propriétaire et les droits sur les dossiers de l'application
 chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/public 2>/dev/null || true
 chmod -R 775 /var/www/storage /var/www/bootstrap/cache /var/www/public 2>/dev/null || true
+
+# Forcer les droits de lecture sur index.php
 chmod 644 /var/www/public/index.php 2>/dev/null || true
 
 # Vérification et Debug du dossier public
 if [ -f "/var/www/public/index.php" ]; then
     echo "✅ index.php trouvé"
     echo "Permissions : $(ls -la /var/www/public/index.php)"
-    sudo -u www-data cat /var/www/public/index.php > /dev/null 2>&1 && echo "✅ index.php lisible par www-data" || echo "❌ index.php non lisible par www-data"
+    
+    # Tester si www-data peut VRAIMENT lire le fichier maintenant
+    if sudo -u www-data cat /var/www/public/index.php > /dev/null 2>&1; then
+        echo "✅ index.php est enfin lisible par www-data !"
+    else
+        echo "❌ index.php TOUJOYRS non lisible par www-data. Tentative de correction agressive..."
+        chmod 777 /var/www /var/www/public /var/www/public/index.php 2>/dev/null || true
+    fi
 else
     echo "❌ index.php manquant au démarrage !"
     echo "Contenu de /var/www/public :"
@@ -22,6 +36,7 @@ else
 fi
 # === FIN CORRECTION ===
 
+# Variables d'environnement par défaut si non définies
 export APP_ENV=${APP_ENV:-production}
 export APP_DEBUG=${APP_DEBUG:-false}
 
@@ -46,7 +61,7 @@ echo "🔗 Configuration du lien de stockage..."
 rm -rf /var/www/public/storage
 php artisan storage:link --force || true
 
-# Permissions finales
+# Permissions finales après génération des caches et du lien
 chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/public/storage 2>/dev/null || true
 chmod -R 775 /var/www/storage /var/www/bootstrap/cache /var/www/public/storage 2>/dev/null || true
 
