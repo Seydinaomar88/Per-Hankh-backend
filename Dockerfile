@@ -1,6 +1,7 @@
 FROM php:8.2-fpm
 
-WORKDIR /var/www/html
+# Utiliser /var/www comme WORKDIR (comme dans votre docker-compose.yml)
+WORKDIR /var/www
 
 # Installation des dépendances système
 RUN apt-get update && apt-get install -y \
@@ -47,20 +48,20 @@ RUN mkdir -p storage/framework/cache \
 RUN rm -rf public/storage || true
 
 # Création du lien symbolique pour storage
-RUN ln -s /var/www/html/storage/app/public public/storage
+RUN ln -s /var/www/storage/app/public public/storage
 
 # Permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/public/storage \
-    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/public/storage \
+    && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
 
 # Optimisation finale (sans scripts)
 RUN composer dump-autoload --optimize --no-scripts
 
-# Configuration Nginx pour Render
+# Configuration Nginx pour Render (avec root /var/www/public)
 RUN echo 'server { \
     listen 10000; \
     server_name localhost; \
-    root /var/www/html/public; \
+    root /var/www/public; \
     index index.php; \
     location / { \
         try_files $uri $uri/ /index.php?$query_string; \
@@ -83,7 +84,7 @@ RUN echo 'server { \
     } \
 }' > /etc/nginx/sites-enabled/default
 
-# Configuration Supervisord
+# Configuration Supervisord (inchangée)
 RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
     echo 'nodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
