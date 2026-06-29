@@ -26,14 +26,17 @@ php artisan config:cache || true
 php artisan route:cache || true
 php artisan view:cache || true
 
-# Création du lien storage
-php artisan storage:link || true
+# Création du lien storage (ignore si déjà existant)
+php artisan storage:link 2>/dev/null || true
 
 # Permissions finales
-chown -R www-data:www-data storage bootstrap/cache public/storage
-chmod -R 775 storage bootstrap/cache
+chown -R www-data:www-data storage bootstrap/cache public/storage 2>/dev/null || true
+chmod -R 775 storage bootstrap/cache 2>/dev/null || true
 
 echo "✅ Application prête !"
 
-# Démarrage de PHP-FPM
-exec php-fpm
+# Le port 10000 est le port par défaut de Render
+echo "🌐 Démarrage sur le port 10000..."
+
+# Démarrer PHP-FPM sur le port 10000
+/usr/sbin/php-fpm --nodaemonize --port 10000
