@@ -8,9 +8,10 @@ echo "🔧 Application des permissions globales..."
 chmod 755 /var /var/www /var/www/public 2>/dev/null || true
 chown -R www-data:www-data /var/www 2>/dev/null || true
 
-# Forcer la directivité globale de PHP-FPM si nécessaire
+# Forcer PHP-FPM à écouter correctement et à charger l'environnement
 if [ -f /usr/local/etc/php-fpm.d/www.conf ]; then
     sed -i 's/;clear_env = no/clear_env = no/g' /usr/local/etc/php-fpm.d/www.conf
+    sed -i 's/listen = 127.0.0.1:9000/listen = 0.0.0.0:9000/g' /usr/local/etc/php-fpm.d/www.conf
 fi
 
 export APP_ENV=${APP_ENV:-production}
@@ -38,5 +39,5 @@ php artisan storage:link --force || true
 chown -h www-data:www-data /var/www/public/storage 2>/dev/null || true
 
 echo "✅ Application prête !"
-echo "🌐 Démarrage de Nginx (Port 10000) et PHP-FPM via Supervisor..."
+echo "🌐 Démarrage de Nginx et PHP-FPM via Supervisor..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

@@ -56,51 +56,57 @@ RUN composer dump-autoload --optimize --no-scripts
 # Supprimer la configuration Nginx par défaut
 RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
 
-# Configuration Nginx optimisée et robuste pour PHP-FPM sur Render
-RUN printf 'server {\n\
-    listen 10000;\n\
-    server_name localhost;\n\
-    root /var/www/public;\n\
-    index index.php index.html;\n\
-    \n\
-    location / {\n\
-        try_files $uri $uri/ /index.php?$query_string;\n\
-    }\n\
-    \n\
-    location ~ \\.php$ {\n\
-        include fastcgi_params;\n\
-        fastcgi_pass 127.0.0.1:9000;\n\
-        fastcgi_index index.php;\n\
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n\
-        fastcgi_param SCRIPT_NAME $fastcgi_script_name;\n\
-    }\n\
-}\n' > /etc/nginx/sites-available/default
+# Configuration Nginx stable pour Render
+RUN cat << 'EOF' > /etc/nginx/sites-available/default
+server {
+    listen 10000 default_server;
+    listen [::]:10000 default_server;
+    server_name _;
+    root /var/www/public;
+    index index.php index.html;
+
+    charset utf-8;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass localhost:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+}
+EOF
 
 # Activer la configuration Nginx
 RUN ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 
 # Configuration Supervisord
-RUN printf '[supervisord]\n\
-nodaemon=true\n\
-user=root\n\
-\n\
-[program:nginx]\n\
-command=nginx -g "daemon off;"\n\
-autostart=true\n\
-autorestart=true\n\
-stdout_logfile=/dev/stdout\n\
-stdout_logfile_maxbytes=0\n\
-stderr_logfile=/dev/stderr\n\
-stderr_logfile_maxbytes=0\n\
-\n\
-[program:php-fpm]\n\
-command=php-fpm -F\n\
-autostart=true\n\
-autorestart=true\n\
-stdout_logfile=/dev/stdout\n\
-stdout_logfile_maxbytes=0\n\
-stderr_logfile=/dev/stderr\n\
-stderr_logfile_maxbytes=0\n' > /etc/supervisor/conf.d/supervisord.conf
+RUN cat << 'EOF' > /etc/supervisor/conf.d/supervisord.conf
+[supervisord]
+nodaemon=true
+user=root
+
+[program:nginx]
+command=nginx -g "daemon off;"
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+[program:php-fpm]
+command=php-fpm -F
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+EOF
 
 # Script de démarrage
 COPY start.sh /usr/local/bin/start.sh
