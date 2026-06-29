@@ -37,43 +37,38 @@ RUN composer install --optimize-autoloader --no-interaction --no-dev --no-script
 # Copier le reste de l'application
 COPY . .
 
-# === VÉRIFICATION ET CORRECTION ===
+# Vérification et correction
 RUN echo "📂 Vérification de la structure..." && \
     ls -la /var/www/ && \
     ls -la /var/www/public/ && \
     if [ ! -f /var/www/public/index.php ]; then \
         echo "❌ index.php manquant ! Création d'un fichier de secours..."; \
-        echo '<?php' > /var/www/public/index.php && \
-        echo '/**' >> /var/www/public/index.php && \
-        echo ' * Laravel - A PHP Framework For Web Artisans' >> /var/www/public/index.php && \
-        echo ' *' >> /var/www/public/index.php && \
-        echo ' * @package  Laravel' >> /var/www/public/index.php && \
-        echo ' * @author   Taylor Otwell <taylor@laravel.com>' >> /var/www/public/index.php && \
-        echo ' */' >> /var/www/public/index.php && \
-        echo '' >> /var/www/public/index.php && \
-        echo 'use Illuminate\Foundation\Application;' >> /var/www/public/index.php && \
-        echo 'use Illuminate\Http\Request;' >> /var/www/public/index.php && \
-        echo '' >> /var/www/public/index.php && \
-        echo 'define("LARAVEL_START", microtime(true));' >> /var/www/public/index.php && \
-        echo '' >> /var/www/public/index.php && \
-        echo '// Determine if the application is in maintenance mode...' >> /var/www/public/index.php && \
-        echo 'if (file_exists($maintenance = __DIR__."/../storage/framework/maintenance.php")) {' >> /var/www/public/index.php && \
-        echo '    require $maintenance;' >> /var/www/public/index.php && \
-        echo '}' >> /var/www/public/index.php && \
-        echo '' >> /var/www/public/index.php && \
-        echo '// Register the Composer autoloader...' >> /var/www/public/index.php && \
-        echo 'require __DIR__."/../vendor/autoload.php";' >> /var/www/public/index.php && \
-        echo '' >> /var/www/public/index.php && \
-        echo '// Bootstrap Laravel and handle the request...' >> /var/www/public/index.php && \
-        echo '/** @var Application $app */' >> /var/www/public/index.php && \
-        echo '$app = require_once __DIR__."/../bootstrap/app.php";' >> /var/www/public/index.php && \
-        echo '' >> /var/www/public/index.php && \
-        echo '$app->handleRequest(Request::capture());' >> /var/www/public/index.php; \
-    else \
+        cat > /var/www/public/index.php << 'EOF'
+<?php
+
+use Illuminate\Foundation\Application;
+use Illuminate\Http\Request;
+
+define('LARAVEL_START', microtime(true));
+
+// Determine if the application is in maintenance mode...
+if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
+    require $maintenance;
+}
+
+// Register the Composer autoloader...
+require __DIR__.'/../vendor/autoload.php';
+
+// Bootstrap Laravel and handle the request...
+/** @var Application $app */
+$app = require_once __DIR__.'/../bootstrap/app.php';
+
+$app->handleRequest(Request::capture());
+EOF
+    else
         echo "✅ index.php présent"; \
         cat /var/www/public/index.php | head -n 5; \
     fi
-# === FIN VÉRIFICATION ===
 
 # Création des dossiers nécessaires
 RUN mkdir -p storage/framework/cache \
@@ -95,12 +90,16 @@ RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/ww
 # Optimisation finale (sans scripts)
 RUN composer dump-autoload --optimize --no-scripts
 
+# Supprimer la configuration Nginx par défaut
+RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
+
 # Configuration Nginx pour Render (avec root /var/www/public)
 RUN echo 'server { \
     listen 10000; \
+    listen [::]:10000; \
     server_name localhost; \
     root /var/www/public; \
-    index index.php; \
+    index index.php index.html; \
     \
     error_log /var/log/nginx/error.log debug; \
     access_log /var/log/nginx/access.log; \
@@ -110,11 +109,11 @@ RUN echo 'server { \
     } \
     \
     location ~ \.php$ { \
+        include fastcgi_params; \
         fastcgi_pass 127.0.0.1:9000; \
         fastcgi_index index.php; \
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name; \
         fastcgi_param PATH_INFO $fastcgi_path_info; \
-        include fastcgi_params; \
         fastcgi_read_timeout 300; \
         fastcgi_connect_timeout 300; \
         fastcgi_send_timeout 300; \
@@ -127,9 +126,12 @@ RUN echo 'server { \
     location /broadcasting/auth { \
         try_files $uri $uri/ /index.php?$query_string; \
     } \
-}' > /etc/nginx/sites-enabled/default
+}' > /etc/nginx/sites-available/default
 
-# Configuration Supervisord (inchangée)
+# Activer la configuration
+RUN ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+
+# Configuration Supervisord
 RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
     echo 'nodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'user=root' >> /etc/supervisor/conf.d/supervisord.conf && \
@@ -155,9 +157,6 @@ RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
 # Script de démarrage
 COPY start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
-
-# Test final avant démarrage
-RUN curl -v http://localhost:10000/ 2>&1 || echo "Test ignoré"
 
 EXPOSE 10000
 

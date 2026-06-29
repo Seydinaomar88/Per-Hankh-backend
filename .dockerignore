@@ -1,4 +1,3 @@
-# .dockerignore
 node_modules
 .env
 .git
@@ -22,8 +21,8 @@ manage.sh
 .idea
 .vscode
 
-# NE PAS IGNORER public/storage
+# Ne pas ignorer public/storage
 # public/storage
 
-# Mais s'assurer que public/index.php est inclus
-!public/index.php
+# Inclure tous les fichiers PHP
+!public/*.php

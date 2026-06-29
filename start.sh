@@ -3,42 +3,24 @@ set -e
 
 echo "🚀 Démarrage de PER ANKH..."
 
-# === DIAGNOSTIC ===
-echo "📂 VÉRIFICATION CRITIQUE :"
+# === DIAGNOSTIC COMPLET ===
+echo "📂 DIAGNOSTIC DE LA STRUCTURE :"
+echo "Contenu de /var/www/public :"
 ls -la /var/www/public/ 2>/dev/null || echo "❌ /var/www/public n'existe pas"
 
-if [ ! -f "/var/www/public/index.php" ]; then
-    echo "❌ CRITIQUE : index.php manquant !"
-    echo "Création d'un fichier index.php de secours..."
-    mkdir -p /var/www/public
-    cat > /var/www/public/index.php << 'EOF'
-<?php
+echo "Contenu de /etc/nginx/sites-enabled :"
+ls -la /etc/nginx/sites-enabled/
 
-use Illuminate\Foundation\Application;
-use Illuminate\Http\Request;
+echo "Configuration Nginx :"
+cat /etc/nginx/sites-enabled/default | head -20
 
-define('LARAVEL_START', microtime(true));
-
-// Determine if the application is in maintenance mode...
-if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
-    require $maintenance;
-}
-
-// Register the Composer autoloader...
-require __DIR__.'/../vendor/autoload.php';
-
-// Bootstrap Laravel and handle the request...
-/** @var Application $app */
-$app = require_once __DIR__.'/../bootstrap/app.php';
-
-$app->handleRequest(Request::capture());
-EOF
-    chmod 644 /var/www/public/index.php
-    chown www-data:www-data /var/www/public/index.php
-    echo "✅ index.php créé"
+echo "Test de l'index.php :"
+if [ -f "/var/www/public/index.php" ]; then
+    echo "✅ index.php existe"
+    head -n 5 /var/www/public/index.php
 else
-    echo "✅ index.php présent"
-    head -n 3 /var/www/public/index.php
+    echo "❌ index.php manquant !"
+    exit 1
 fi
 # === FIN DIAGNOSTIC ===
 
