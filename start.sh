@@ -5,18 +5,13 @@ echo "🚀 Démarrage de PER ANKH..."
 
 # === CORRECTION DES PERMISSIONS ===
 echo "🔧 Application des permissions globales..."
-
-# On force l'accès complet sur l'arborescence web
 chmod 755 /var /var/www /var/www/public 2>/dev/null || true
 chown -R www-data:www-data /var/www 2>/dev/null || true
 
-if [ -f "/var/www/public/index.php" ]; then
-    echo "✅ index.php trouvé avec succès"
-else
-    echo "❌ index.php INTROUVABLE au démarrage ! Vérifiez vos volumes Render."
-    exit 1
+# Forcer la directivité globale de PHP-FPM si nécessaire
+if [ -f /usr/local/etc/php-fpm.d/www.conf ]; then
+    sed -i 's/;clear_env = no/clear_env = no/g' /usr/local/etc/php-fpm.d/www.conf
 fi
-# === FIN CORRECTION ===
 
 export APP_ENV=${APP_ENV:-production}
 export APP_DEBUG=${APP_DEBUG:-false}
@@ -40,8 +35,6 @@ php artisan view:cache || true
 echo "🔗 Configuration du lien de stockage..."
 rm -rf /var/www/public/storage
 php artisan storage:link --force || true
-
-# S'assurer que le lien symbolique créé appartient à www-data
 chown -h www-data:www-data /var/www/public/storage 2>/dev/null || true
 
 echo "✅ Application prête !"

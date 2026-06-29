@@ -56,20 +56,23 @@ RUN composer dump-autoload --optimize --no-scripts
 # Supprimer la configuration Nginx par défaut
 RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
 
-# Création directe de la configuration Nginx propre pour Render
+# Configuration Nginx optimisée et robuste pour PHP-FPM sur Render
 RUN printf 'server {\n\
     listen 10000;\n\
     server_name localhost;\n\
     root /var/www/public;\n\
     index index.php index.html;\n\
+    \n\
     location / {\n\
         try_files $uri $uri/ /index.php?$query_string;\n\
     }\n\
+    \n\
     location ~ \\.php$ {\n\
         include fastcgi_params;\n\
         fastcgi_pass 127.0.0.1:9000;\n\
         fastcgi_index index.php;\n\
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n\
+        fastcgi_param SCRIPT_NAME $fastcgi_script_name;\n\
     }\n\
 }\n' > /etc/nginx/sites-available/default
 
